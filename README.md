@@ -2,14 +2,12 @@
 
 Small Pi extension for controlling thinking/effort from inside a Pi session.
 
-## Goal
+`pi-effort` adds a simple `/effort` command to Pi so you can:
 
-Provide a simple `/effort` command for:
-
-- showing the current thinking level
-- showing model-specific available effort levels
-- changing the current session thinking level
-- setting a persistent default thinking level
+- inspect the current session thinking level
+- see which effort levels the current model actually supports
+- change the current session effort without restarting Pi
+- set or clear the default effort for future sessions
 
 ## Commands
 
@@ -32,7 +30,7 @@ Provide a simple `/effort` command for:
 /effort default clear
 ```
 
-Behavior:
+## What It Does
 
 - `/effort` or `/effort show` shows the current session effort and the persisted
   default effort, plus the Pi-level effort options available for the current model.
@@ -47,7 +45,37 @@ New sessions automatically pick up `defaultThinkingLevel` from Pi's own
 session/runtime initialization path. `pi-effort` does not add a separate
 `session_start` hook for this because Pi core already applies the default.
 
-## Model-specific options
+## Examples
+
+```text
+/effort show
+```
+
+Shows:
+
+```text
+current=<level> | default=<level-or-unset> | available=<levels>
+```
+
+```text
+/effort high
+```
+
+Changes the current session effort to `high`.
+
+```text
+/effort default xhigh
+```
+
+Sets the default effort for future Pi sessions to `xhigh`.
+
+```text
+/effort default clear
+```
+
+Removes the persisted default.
+
+## Model-Specific Options
 
 `pi-effort` follows Pi's own model-level thinking granularity:
 
@@ -72,6 +100,12 @@ but the extension surface remains Pi's standard thinking levels.
 pi install git:github.com/ricardofrantz/pi-effort
 ```
 
+Then reload Pi resources:
+
+```bash
+/reload
+```
+
 ### Local development
 
 ```bash
@@ -84,12 +118,6 @@ Then load it from a local checkout:
 pi --extension ./index.ts
 ```
 
-Or install the package into Pi:
-
-```bash
-pi install git:github.com/ricardofrantz/pi-effort
-```
-
 ## Verification
 
 ```bash
@@ -97,11 +125,21 @@ npm run check
 npm test
 ```
 
-## Repo structure
+## Why This Exists
+
+Pi already has thinking-level controls, but they are not exposed as a small,
+focused slash command for daily use. `pi-effort` makes that workflow explicit:
+
+- one command to inspect session/default effort
+- one command to change the current session
+- one command to set the next-session default
+
+## Repo Structure
 
 ```text
 index.ts        Pi extension entrypoint
 effort.ts       Parsing and settings helpers
+tests/          Unit and runtime tests
 package.json    Package metadata and Pi manifest
 tsconfig.json   TypeScript configuration
 ```

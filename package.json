@@ -1,7 +1,7 @@
 {
   "name": "pi-effort",
   "version": "0.0.1",
-  "description": "Pi extension for controlling session and default thinking effort",
+  "description": "Pi slash command for inspecting and changing session and default thinking effort",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Ricardo A S Frantz",
@@ -13,6 +13,12 @@
     "pi-package",
     "pi-extension",
     "pi",
+    "pi-coding-agent",
+    "llm",
+    "developer-tools",
+    "command-line",
+    "productivity",
+    "reasoning",
     "thinking",
     "effort"
   ],
