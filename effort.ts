@@ -2,15 +2,23 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { ThinkingLevel } from "@mariozechner/pi-ai";
 
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const THINKING_LEVELS_WITHOUT_XHIGH = ["off", "minimal", "low", "medium", "high"] as const;
+export type EffortLevel = (typeof THINKING_LEVELS)[number];
 
 export type EffortCommand =
   | { kind: "show" }
+  | { kind: "options" }
   | { kind: "help" }
-  | { kind: "set-session"; level: ThinkingLevel }
-  | { kind: "set-default"; level: ThinkingLevel | null };
+  | { kind: "set-session"; level: EffortLevel }
+  | { kind: "set-default"; level: EffortLevel | null };
 
-export function isThinkingLevel(value: string): value is ThinkingLevel {
-  return THINKING_LEVELS.includes(value as ThinkingLevel);
+export interface EffortModelLike {
+  id: string;
+  reasoning?: boolean;
+}
+
+export function isThinkingLevel(value: string): value is EffortLevel {
+  return THINKING_LEVELS.includes(value as EffortLevel);
 }
 
 export function parseEffortCommand(args: string): EffortCommand {
@@ -24,6 +32,7 @@ export function parseEffortCommand(args: string): EffortCommand {
   }
 
   if (first === "help") return { kind: "help" };
+  if (first === "options" || first === "available") return { kind: "options" };
   if (first === "show" || first === "status" || first === "current") return { kind: "show" };
 
   if (first === "default") {
@@ -36,6 +45,29 @@ export function parseEffortCommand(args: string): EffortCommand {
   if (isThinkingLevel(first)) return { kind: "set-session", level: first };
 
   throw new Error(`Unknown effort command "${first}".`);
+}
+
+export function supportsXhighThinking(model: EffortModelLike | null | undefined): boolean {
+  if (!model) return false;
+  if (model.id.includes("gpt-5.2") || model.id.includes("gpt-5.3") || model.id.includes("gpt-5.4")) {
+    return true;
+  }
+
+  if (
+    model.id.includes("opus-4-6") ||
+    model.id.includes("opus-4.6") ||
+    model.id.includes("opus-4-7") ||
+    model.id.includes("opus-4.7")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function getAvailableThinkingLevels(model: EffortModelLike | null | undefined): EffortLevel[] {
+  if (!model?.reasoning) return ["off"];
+  return supportsXhighThinking(model) ? [...THINKING_LEVELS] : [...THINKING_LEVELS_WITHOUT_XHIGH];
 }
 
 export function readSettingsObject(settingsPath: string): Record<string, unknown> {
@@ -55,13 +87,13 @@ export function readSettingsObject(settingsPath: string): Record<string, unknown
   }
 }
 
-export function getDefaultThinkingLevel(settingsPath: string): ThinkingLevel | undefined {
+export function getDefaultThinkingLevel(settingsPath: string): EffortLevel | undefined {
   const settings = readSettingsObject(settingsPath);
   const value = settings.defaultThinkingLevel;
   return typeof value === "string" && isThinkingLevel(value) ? value : undefined;
 }
 
-export function writeDefaultThinkingLevel(settingsPath: string, level: ThinkingLevel | null): void {
+export function writeDefaultThinkingLevel(settingsPath: string, level: EffortLevel | null): void {
   const settings = readSettingsObject(settingsPath);
 
   if (level === null) {
@@ -78,6 +110,7 @@ export function formatUsage(): string {
     "Usage:",
     "  /effort",
     "  /effort show",
+    "  /effort options",
     "  /effort <off|minimal|low|medium|high|xhigh>",
     "  /effort default <off|minimal|low|medium|high|xhigh>",
     "  /effort default clear",

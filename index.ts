@@ -3,16 +3,18 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import {
   THINKING_LEVELS,
+  type EffortLevel,
   formatUsage,
+  getAvailableThinkingLevels,
   getDefaultThinkingLevel,
   parseEffortCommand,
   writeDefaultThinkingLevel,
 } from "./effort.js";
 
-function buildShowMessage(settingsPath: string, current: string): string {
+function buildShowMessage(settingsPath: string, current: string, available: string[]): string {
   const defaultLevel = getDefaultThinkingLevel(settingsPath);
   const defaultText = defaultLevel ?? "(unset)";
-  return `Effort: current=${current} | default=${defaultText}`;
+  return `Effort: current=${current} | default=${defaultText} | available=${available.join(",")}`;
 }
 
 function updateEffortStatus(ctx: ExtensionCommandContext, current: string): void {
@@ -30,13 +32,14 @@ export default function effortExtension(pi: ExtensionAPI): void {
       if (tokens.length === 0) {
         return [
           { value: "show", label: "show" },
+          { value: "options", label: "options" },
           { value: "default", label: "default" },
           ...THINKING_LEVELS.map((level) => ({ value: level, label: level })),
         ];
       }
 
       if (tokens.length === 1 && !trailingSpace) {
-        const options = ["show", "default", ...THINKING_LEVELS];
+        const options = ["show", "options", "default", ...THINKING_LEVELS];
         return options
           .filter((option) => option.startsWith(tokens[0]))
           .map((option) => ({ value: option, label: option }));
@@ -70,16 +73,24 @@ export default function effortExtension(pi: ExtensionAPI): void {
           ctx.ui.notify(formatUsage(), "info");
           return;
 
+        case "options": {
+          const available = getAvailableThinkingLevels(ctx.model);
+          updateEffortStatus(ctx, pi.getThinkingLevel());
+          ctx.ui.notify(`Available effort options for ${ctx.model?.id ?? "current model"}: ${available.join(", ")}`, "info");
+          return;
+        }
+
         case "show": {
           const current = pi.getThinkingLevel();
+          const available = getAvailableThinkingLevels(ctx.model);
           updateEffortStatus(ctx, current);
-          ctx.ui.notify(buildShowMessage(settingsPath, pi.getThinkingLevel()), "info");
+          ctx.ui.notify(buildShowMessage(settingsPath, pi.getThinkingLevel(), available), "info");
           return;
         }
 
         case "set-session": {
           const before = pi.getThinkingLevel();
-          pi.setThinkingLevel(command.level);
+          pi.setThinkingLevel(command.level as EffortLevel & Parameters<typeof pi.setThinkingLevel>[0]);
           const after = pi.getThinkingLevel();
           updateEffortStatus(ctx, after);
           if (after === command.level) {
