@@ -7,21 +7,9 @@ Small Pi extension for controlling thinking/effort from inside a Pi session.
 Provide a simple `/effort` command for:
 
 - showing the current thinking level
+- showing model-specific available effort levels
 - changing the current session thinking level
 - setting a persistent default thinking level
-
-Planned command surface:
-
-```text
-/effort show
-/effort off
-/effort minimal
-/effort low
-/effort medium
-/effort high
-/effort xhigh
-/effort default <off|minimal|low|medium|high|xhigh>
-```
 
 ## Commands
 
@@ -54,6 +42,10 @@ Behavior:
 - `/effort default <level>` changes the default thinking level for future
   sessions by editing `~/.pi/agent/settings.json`.
 - `/effort default clear` removes the persisted default.
+
+New sessions automatically pick up `defaultThinkingLevel` from Pi's own
+session/runtime initialization path. `pi-effort` does not add a separate
+`session_start` hook for this because Pi core already applies the default.
 
 ## Model-specific options
 

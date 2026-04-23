@@ -144,3 +144,48 @@ test("runtime default command writes temporary agent settings file", async () =>
     }
   }
 });
+
+test("new sessions inherit defaultThinkingLevel from Pi settings without extension startup logic", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "pi-effort-runtime-"));
+  const agentDir = join(tempRoot, "agent");
+  const cwd = join(tempRoot, "cwd");
+  mkdirSync(agentDir, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+
+  try {
+    const runtime = createExtensionRuntime();
+    const eventBus = createEventBus();
+    const extension = await loadExtensionFromFactory(effortExtension, cwd, eventBus, runtime, "<pi-effort-test>");
+    const extensionsResult: LoadExtensionsResult = { extensions: [extension], errors: [], runtime };
+    const resourceLoader = createResourceLoader(extensionsResult);
+
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+    settingsManager.applyOverrides({ defaultThinkingLevel: "high" });
+
+    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    const sessionManager = SessionManager.inMemory();
+
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      model: reasoningModel,
+      settingsManager,
+      authStorage,
+      modelRegistry,
+      sessionManager,
+      resourceLoader,
+    });
+
+    assert.equal(session.thinkingLevel, "high");
+  } finally {
+    if (previousAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+    }
+  }
+});
