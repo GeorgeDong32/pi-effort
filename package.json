@@ -1,7 +1,7 @@
 {
   "name": "pi-effort",
-  "version": "0.0.1",
-  "description": "Pi slash command for inspecting and changing session and default thinking effort",
+  "version": "0.1.0",
+  "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Ricardo A S Frantz",

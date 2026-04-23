@@ -1,97 +1,70 @@
 # pi-effort
 
-Small Pi extension for controlling thinking/effort from inside a Pi session.
+Pi extension for controlling thinking/effort with model-adaptive `min`/`max` aliases.
 
 ## Goal
 
-Provide a simple `/effort` command for:
+Provide a `/effort` command that adapts to the current model:
 
-- showing the current thinking level
-- showing model-specific available effort levels
-- changing the current session thinking level
-- setting a persistent default thinking level
+- `min` — set the lowest reasoning level for this model
+- `max` — set the highest reasoning level for this model
+- Explicit levels for fine-grained control
+- Persistent defaults for future sessions
 
 ## Commands
 
 ```text
-/effort
-/effort show
-/effort options
-/effort off
-/effort minimal
-/effort low
-/effort medium
-/effort high
-/effort xhigh
-/effort default off
-/effort default minimal
-/effort default low
-/effort default medium
-/effort default high
-/effort default xhigh
+/effort            show current effort and available levels
+/effort min        set minimum effort for this model
+/effort max        set maximum effort for this model
+/effort <level>    set explicit level (minimal|low|medium|high|xhigh)
+/effort options    show available levels for this model
+/effort default min|max|<level>
 /effort default clear
 ```
 
-Behavior:
+### How min/max adapt per model
 
-- `/effort` or `/effort show` shows the current session effort and the persisted
-  default effort, plus the Pi-level effort options available for the current model.
-- `/effort options` shows only the Pi-level effort options available for the
-  current model.
-- `/effort <level>` changes the current session thinking level. If the level is
-  not supported by the current model, the command is rejected with an error and
-  the current level is unchanged.
-- `/effort default <level>` changes the default thinking level for future
-  sessions by editing `~/.pi/agent/settings.json`.
-- `/effort default clear` removes the persisted default.
+| Model type | `min` | `max` | Available levels |
+|---|---|---|---|
+| Non-reasoning | — | — | *(thinking unavailable)* |
+| Reasoning (standard) | `minimal` | `high` | minimal, low, medium, high |
+| Reasoning (xhigh-capable) | `minimal` | `xhigh` | minimal, low, medium, high, xhigh |
 
-Invalid commands show a suggestion when the input is close to a valid option
-(e.g., `/effort hihg` suggests "Did you mean \"high\"?").
+xhigh-capable models in Pi: `gpt-5.2*`, `gpt-5.3*`, `gpt-5.4*`, `opus-4.6*`, `opus-4.7*`.
 
-New sessions automatically pick up `defaultThinkingLevel` from Pi's own
-session/runtime initialization path. `pi-effort` does not add a separate
-`session_start` hook for this because Pi core already applies the default.
+### Defaults
 
-## Model-specific options
+- `/effort default max` — writes the resolved level (e.g., `xhigh`) to `~/.pi/agent/settings.json`. Future sessions pick it up automatically via Pi core.
+- `/effort default clear` — removes the persisted default.
 
-`pi-effort` follows Pi's own model-level thinking granularity:
+### Backward compat
 
-- non-reasoning models: `off`
-- reasoning models: `off, minimal, low, medium, high`
-- xhigh-capable models in Pi:
-  - `gpt-5.2*`
-  - `gpt-5.3*`
-  - `gpt-5.4*`
-  - `opus-4.6*`
-  - `opus-4.7*`
+`/effort off` still works but is not advertised in the primary surface. On reasoning models, use `min` instead — it's the same as `minimal` (the lowest reasoning level).
 
-Important: this is Pi-level effort, not raw provider-native labels. For example,
-Anthropic may internally map Pi's `xhigh` to a provider-specific maximum effort,
-but the extension surface remains Pi's standard thinking levels.
+## Keyboard shortcut
 
-### Custom xhigh model patterns
+`Ctrl+Shift+E` — cycle through available effort levels for the current model.
 
-You can override the built-in xhigh model list by adding a `xhighModelPatterns`
-array to `~/.pi/agent/settings.json`:
-
-```json
-{
-  "xhighModelPatterns": ["my-custom-model", "another-pattern"]
-}
-```
-
-If present, these patterns replace the built-in list entirely. Each pattern is
-matched as a substring against the model ID.
-
-## Install
-
-### npm (preferred, after publish)
+## CLI flag
 
 ```bash
-pi install npm:pi-effort
+pi --effort max       # start with maximum effort
+pi --effort min       # start with minimum effort
+pi --effort high      # start with explicit level
 ```
 
-### Git (current install path)
+The flag resolves `min`/`max` against the initial model and applies the level on session start.
+
+## Model switching
+
+When you switch models (via `/model` or model selector), `pi-effort` automatically:
+
+1. Checks if the current effort level exceeds the new model's maximum
+2. Clamps it down and notifies you (e.g., `Effort clamped: xhigh -> high`)
+3. Updates the footer status
+
+## Install
 
 ```bash
 pi install git:github.com/ricardofrantz/pi-effort
@@ -104,26 +77,18 @@ npm install
 pi --extension ./index.ts
 ```
 
-## Packaging Notes
-
-- `pi-effort` is a Pi package via `package.json.pi.extensions`
-- Pi core runtime imports are declared as `peerDependencies`, per Pi package docs
-- once published to npm, the intended install path is `pi install npm:pi-effort`
-
 ## Verification
 
 ```bash
 npm run check
 npm test
-npm pack --dry-run
-npm publish --dry-run
 ```
 
 ## Repo structure
 
 ```text
-index.ts        Pi extension entrypoint
-effort.ts       Parsing, settings helpers, and model capability logic
+index.ts        Pi extension entrypoint (hooks, commands, shortcuts)
+effort.ts       Parsing, resolution, settings, and model capability logic
 package.json    Package metadata and Pi manifest
 tsconfig.json   TypeScript configuration
 ```

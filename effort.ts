@@ -1,23 +1,50 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { Model } from "@mariozechner/pi-ai";
+import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
 
-export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-export const THINKING_LEVELS_WITHOUT_XHIGH = ["off", "minimal", "low", "medium", "high"] as const;
-export type EffortLevel = (typeof THINKING_LEVELS)[number];
+/**
+ * All levels the extension knows about, including "off" (Pi's internal default).
+ * "off" is accepted by the parser for backward compat but not shown in the
+ * primary command surface — use `min`/`max` or explicit reasoning levels instead.
+ */
+export const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const ALL_LEVELS_WITHOUT_XHIGH = ["off", "minimal", "low", "medium", "high"] as const;
+
+/** Levels shown to users in USAGE, tab completion, and /effort options. */
+export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+
+/** Semantic aliases that resolve per-model. */
+export const SEMANTIC_ALIASES = ["min", "max"] as const;
+
+export type EffortLevel = (typeof ALL_LEVELS)[number];
+
+/**
+ * Resolve the Pi ThinkingLevel from our EffortLevel.
+ * "off" is not in ThinkingLevel but is valid in Pi's internal state.
+ */
+export function toThinkingLevel(level: EffortLevel): ThinkingLevel | "off" {
+  return level;
+}
+
+export function isEffortLevel(value: string): value is EffortLevel {
+  return ALL_LEVELS.includes(value as EffortLevel);
+}
 
 export type EffortCommand =
   | { kind: "show" }
   | { kind: "options" }
   | { kind: "help" }
   | { kind: "set-session"; level: EffortLevel }
+  | { kind: "set-min" }
+  | { kind: "set-max" }
+  | { kind: "set-default-min" }
+  | { kind: "set-default-max" }
   | { kind: "set-default"; level: EffortLevel | null };
 
 export type EffortModel = Pick<Model<any>, "id" | "reasoning">;
 
-export function isThinkingLevel(value: string): value is EffortLevel {
-  return THINKING_LEVELS.includes(value as EffortLevel);
-}
+// ─── Suggestion helpers ─────────────────────────────────────────────
 
 function levenshteinDistance(a: string, b: string): number {
   const m = a.length;
@@ -57,6 +84,11 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
   return best;
 }
 
+/** All tokens valid as the first argument to /effort. */
+const FIRST_TOKEN_CANDIDATES = [...USER_LEVELS, ...SEMANTIC_ALIASES, "show", "options", "default", "help"];
+
+// ─── Parser ─────────────────────────────────────────────────────────
+
 export function parseEffortCommand(args: string): EffortCommand {
   const tokens = args.trim().split(/\s+/).filter(Boolean);
 
@@ -70,22 +102,29 @@ export function parseEffortCommand(args: string): EffortCommand {
   if (first === "help") return { kind: "help" };
   if (first === "options" || first === "available") return { kind: "options" };
   if (first === "show" || first === "status" || first === "current") return { kind: "show" };
+  if (first === "max") return { kind: "set-max" };
+  if (first === "min") return { kind: "set-min" };
 
   if (first === "default") {
     if (!second || second === "show" || second === "status") return { kind: "show" };
     if (second === "clear" || second === "unset") return { kind: "set-default", level: null };
-    if (isThinkingLevel(second)) return { kind: "set-default", level: second };
-    const suggestion = suggestClosest(second, THINKING_LEVELS);
+    if (second === "max") return { kind: "set-default-max" };
+    if (second === "min") return { kind: "set-default-min" };
+    if (isEffortLevel(second)) return { kind: "set-default", level: second };
+    const suggestion = suggestClosest(second, [...USER_LEVELS, ...SEMANTIC_ALIASES]);
     const hint = suggestion ? ` Did you mean "${suggestion}"?` : "";
     throw new Error(`Unknown default thinking level "${second}".${hint}`);
   }
 
-  if (isThinkingLevel(first)) return { kind: "set-session", level: first };
+  // Accept "off" for backward compat even though it's not in the user-facing list
+  if (isEffortLevel(first)) return { kind: "set-session", level: first };
 
-  const suggestion = suggestClosest(first, [...THINKING_LEVELS, "show", "options", "default", "help"]);
+  const suggestion = suggestClosest(first, FIRST_TOKEN_CANDIDATES);
   const hint = suggestion ? ` Did you mean "${suggestion}"?` : "";
   throw new Error(`Unknown effort command "${first}".${hint}`);
 }
+
+// ─── Model capability resolution ────────────────────────────────────
 
 const DEFAULT_XHIGH_PATTERNS = [
   "gpt-5.2",
@@ -97,31 +136,50 @@ const DEFAULT_XHIGH_PATTERNS = [
   "opus-4.7",
 ];
 
-function getXhighPatterns(settings: Record<string, unknown>): string[] {
-  const override = settings.xhighModelPatterns;
-  if (Array.isArray(override) && override.every((v) => typeof v === "string")) {
-    return override as string[];
-  }
-  return DEFAULT_XHIGH_PATTERNS;
-}
-
-export function supportsXhighThinking(
-  model: EffortModel | null | undefined,
-  patterns?: string[]
-): boolean {
+export function supportsXhighThinking(model: EffortModel | null | undefined): boolean {
   if (!model) return false;
-  const checks = patterns ?? DEFAULT_XHIGH_PATTERNS;
-  return checks.some((p) => model.id.includes(p));
+  return DEFAULT_XHIGH_PATTERNS.some((p) => model.id.includes(p));
 }
 
-export function getAvailableThinkingLevels(
-  model: EffortModel | null | undefined,
-  settings?: Record<string, unknown>
-): EffortLevel[] {
+/** Levels available for the given model, including "off". */
+export function getAvailableThinkingLevels(model: EffortModel | null | undefined): EffortLevel[] {
   if (!model || !model.reasoning) return ["off"];
-  const patterns = settings ? getXhighPatterns(settings) : undefined;
-  return supportsXhighThinking(model, patterns) ? [...THINKING_LEVELS] : [...THINKING_LEVELS_WITHOUT_XHIGH];
+  return supportsXhighThinking(model) ? [...ALL_LEVELS] : [...ALL_LEVELS_WITHOUT_XHIGH];
 }
+
+/** Levels shown to the user for the given model (excludes "off"). */
+export function getUserFacingLevels(model: EffortModel | null | undefined): EffortLevel[] {
+  return getAvailableThinkingLevels(model).filter((l) => l !== "off");
+}
+
+/**
+ * Resolve "min" to the lowest reasoning level for the model.
+ * Returns undefined for non-reasoning models (thinking unavailable).
+ */
+export function resolveMinLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
+  if (!model?.reasoning) return undefined;
+  return "minimal";
+}
+
+/**
+ * Resolve "max" to the highest available level for the model.
+ * Returns undefined for non-reasoning models (thinking unavailable).
+ */
+export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
+  if (!model?.reasoning) return undefined;
+  return supportsXhighThinking(model) ? "xhigh" : "high";
+}
+
+/** Cycle to the next effort level for the given model. Wraps around. */
+export function cycleLevel(current: string, model: EffortModel | null | undefined): EffortLevel | undefined {
+  const levels = getUserFacingLevels(model);
+  if (levels.length === 0) return undefined;
+  const idx = levels.indexOf(current as EffortLevel);
+  if (idx === -1) return levels[0];
+  return levels[(idx + 1) % levels.length];
+}
+
+// ─── Settings persistence ───────────────────────────────────────────
 
 export function readSettingsObject(settingsPath: string): Record<string, unknown> {
   try {
@@ -144,7 +202,7 @@ export function getDefaultThinkingLevel(settingsPath: string): EffortLevel | und
   try {
     const settings = readSettingsObject(settingsPath);
     const value = settings.defaultThinkingLevel;
-    return typeof value === "string" && isThinkingLevel(value) ? value : undefined;
+    return typeof value === "string" && isEffortLevel(value) ? value : undefined;
   } catch {
     return undefined;
   }
@@ -161,17 +219,20 @@ export function writeDefaultThinkingLevel(settingsPath: string, level: EffortLev
 
   const content = `${JSON.stringify(settings, null, 2)}\n`;
   const dir = dirname(settingsPath);
-  const tmpPath = join(dir, `.settings.json.tmp.${Date.now()}`);
+  const tmpPath = join(dir, `.settings.json.tmp.${process.pid}.${randomUUID()}`);
   writeFileSync(tmpPath, content, "utf-8");
   renameSync(tmpPath, settingsPath);
 }
 
+// ─── Help text ──────────────────────────────────────────────────────
+
 export const USAGE = [
   "Usage:",
-  "  /effort",
-  "  /effort show",
-  "  /effort options",
-  "  /effort <off|minimal|low|medium|high|xhigh>",
-  "  /effort default <off|minimal|low|medium|high|xhigh>",
+  "  /effort            show current effort",
+  "  /effort min        set minimum effort for this model",
+  "  /effort max        set maximum effort for this model",
+  "  /effort <level>    set explicit level (minimal|low|medium|high|xhigh)",
+  "  /effort options    show available levels for this model",
+  "  /effort default min|max|<level>",
   "  /effort default clear",
 ].join("\n");

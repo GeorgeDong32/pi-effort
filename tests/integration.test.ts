@@ -60,7 +60,7 @@ function createResourceLoader(extensionsResult: LoadExtensionsResult): ResourceL
   };
 }
 
-function makeSessionConfig(model: Model<any>, thinkingLevel: ThinkingLevel, defaultThinkingLevel?: ThinkingLevel) {
+function makeSessionConfig() {
   const tempRoot = mkdtempSync(join(tmpdir(), "pi-effort-runtime-"));
   const agentDir = join(tempRoot, "agent");
   const cwd = join(tempRoot, "cwd");
@@ -90,7 +90,7 @@ async function createTestSession(
   thinkingLevel: ThinkingLevel,
   defaultThinkingLevel?: ThinkingLevel
 ) {
-  const config = makeSessionConfig(model, thinkingLevel, defaultThinkingLevel);
+  const config = makeSessionConfig();
   const extension = await config.extensionPromise;
   const extensionsResult: LoadExtensionsResult = { extensions: [extension], errors: [], runtime: config.runtime };
   const resourceLoader = createResourceLoader(extensionsResult);
@@ -127,24 +127,24 @@ function cleanupSession(previousAgentDir: string | undefined) {
   }
 }
 
+// ─── Basic command tests ────────────────────────────────────────────
+
 test("runtime command changes session thinking level", async () => {
   const { session, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
 
   try {
     await session.prompt("/effort high");
-
     assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
   }
 });
 
-test("runtime default command writes temporary agent settings file", async () => {
+test("runtime default command writes agent settings file", async () => {
   const { session, agentDir, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
 
   try {
     await session.prompt("/effort default high");
-
     const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
     assert.equal(persisted.defaultThinkingLevel, "high");
   } finally {
@@ -152,7 +152,7 @@ test("runtime default command writes temporary agent settings file", async () =>
   }
 });
 
-test("new sessions inherit defaultThinkingLevel from Pi settings without extension startup logic", async () => {
+test("new sessions inherit defaultThinkingLevel from Pi settings", async () => {
   const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
 
   try {
@@ -162,14 +162,14 @@ test("new sessions inherit defaultThinkingLevel from Pi settings without extensi
   }
 });
 
+// ─── xhigh pre-validation tests ─────────────────────────────────────
+
 test("runtime rejects xhigh on non-xhigh-capable model", async () => {
   const { session, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
 
   try {
     const before = session.thinkingLevel;
     await session.prompt("/effort xhigh");
-
-    // Should reject and keep the previous level
     assert.equal(session.thinkingLevel, before as ThinkingLevel);
   } finally {
     cleanupSession(previousAgentDir);
@@ -181,8 +181,54 @@ test("runtime accepts xhigh on xhigh-capable model", async () => {
 
   try {
     await session.prompt("/effort xhigh");
-
     assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+// ─── min/max semantic alias tests ───────────────────────────────────
+
+test("runtime /effort max resolves to high on non-xhigh model", async () => {
+  const { session, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
+
+  try {
+    await session.prompt("/effort max");
+    assert.equal(session.thinkingLevel, "high" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort max resolves to xhigh on xhigh-capable model", async () => {
+  const { session, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium");
+
+  try {
+    await session.prompt("/effort max");
+    assert.equal(session.thinkingLevel, "xhigh" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort min resolves to minimal on reasoning model", async () => {
+  const { session, previousAgentDir } = await createTestSession(reasoningModel, "high", "high");
+
+  try {
+    await session.prompt("/effort min");
+    assert.equal(session.thinkingLevel, "minimal" as ThinkingLevel);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("runtime /effort default max writes resolved level to settings", async () => {
+  const { session, agentDir, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium");
+
+  try {
+    await session.prompt("/effort default max");
+    const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+    assert.equal(persisted.defaultThinkingLevel, "xhigh");
   } finally {
     cleanupSession(previousAgentDir);
   }

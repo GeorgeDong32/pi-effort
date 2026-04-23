@@ -5,23 +5,50 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   USAGE,
+  USER_LEVELS,
   getAvailableThinkingLevels,
   getDefaultThinkingLevel,
+  getUserFacingLevels,
   parseEffortCommand,
+  resolveMaxLevel,
+  resolveMinLevel,
   supportsXhighThinking,
+  cycleLevel,
   writeDefaultThinkingLevel,
 } from "../effort.ts";
 
-test("parseEffortCommand handles show and current-session levels", () => {
+// ─── parseEffortCommand ──────────────────────────────────────────────
+
+test("parseEffortCommand handles show and help", () => {
   assert.deepEqual(parseEffortCommand(""), { kind: "show" });
   assert.deepEqual(parseEffortCommand("show"), { kind: "show" });
   assert.deepEqual(parseEffortCommand("options"), { kind: "options" });
+  assert.deepEqual(parseEffortCommand("help"), { kind: "help" });
+});
+
+test("parseEffortCommand handles explicit levels", () => {
+  assert.deepEqual(parseEffortCommand("high"), { kind: "set-session", level: "high" });
   assert.deepEqual(parseEffortCommand("xhigh"), { kind: "set-session", level: "xhigh" });
+  assert.deepEqual(parseEffortCommand("minimal"), { kind: "set-session", level: "minimal" });
+});
+
+test("parseEffortCommand accepts off for backward compat", () => {
+  assert.deepEqual(parseEffortCommand("off"), { kind: "set-session", level: "off" });
+});
+
+test("parseEffortCommand handles min and max aliases", () => {
+  assert.deepEqual(parseEffortCommand("min"), { kind: "set-min" });
+  assert.deepEqual(parseEffortCommand("max"), { kind: "set-max" });
 });
 
 test("parseEffortCommand handles default persistence commands", () => {
   assert.deepEqual(parseEffortCommand("default high"), { kind: "set-default", level: "high" });
   assert.deepEqual(parseEffortCommand("default clear"), { kind: "set-default", level: null });
+});
+
+test("parseEffortCommand handles default min and default max", () => {
+  assert.deepEqual(parseEffortCommand("default min"), { kind: "set-default-min" });
+  assert.deepEqual(parseEffortCommand("default max"), { kind: "set-default-max" });
 });
 
 test("parseEffortCommand rejects invalid input", () => {
@@ -35,12 +62,98 @@ test("parseEffortCommand suggests close matches for typos", () => {
   assert.throws(() => parseEffortCommand("shwo"), /Did you mean "show"\?/);
 });
 
+test("parseEffortCommand suggests min/max for close typos", () => {
+  assert.throws(() => parseEffortCommand("mn"), /Did you mean "min"\?/);
+  assert.throws(() => parseEffortCommand("maxe"), /Did you mean "max"\?/);
+});
+
 test("parseEffortCommand does not suggest distant typos", () => {
   assert.throws(() => parseEffortCommand("xyz"), /Unknown effort command/);
-  assert.doesNotMatch(String(() => {
-    try { parseEffortCommand("xyz"); } catch (e) { return (e as Error).message; }
-  }), /Did you mean/);
+  let message = "";
+  try {
+    parseEffortCommand("xyz");
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  assert.doesNotMatch(message, /Did you mean/);
 });
+
+// ─── resolveMinLevel / resolveMaxLevel ───────────────────────────────
+
+test("resolveMinLevel returns minimal for reasoning models", () => {
+  assert.equal(resolveMinLevel({ id: "minimax/minimax-m2.7", reasoning: true }), "minimal");
+  assert.equal(resolveMinLevel({ id: "gpt-5.4", reasoning: true }), "minimal");
+});
+
+test("resolveMinLevel returns undefined for non-reasoning models", () => {
+  assert.equal(resolveMinLevel({ id: "plain-model", reasoning: false }), undefined);
+  assert.equal(resolveMinLevel(null), undefined);
+});
+
+test("resolveMaxLevel returns high for reasoning models without xhigh", () => {
+  assert.equal(resolveMaxLevel({ id: "minimax/minimax-m2.7", reasoning: true }), "high");
+});
+
+test("resolveMaxLevel returns xhigh for xhigh-capable models", () => {
+  assert.equal(resolveMaxLevel({ id: "gpt-5.4", reasoning: true }), "xhigh");
+  assert.equal(resolveMaxLevel({ id: "claude-opus-4.6", reasoning: true }), "xhigh");
+});
+
+test("resolveMaxLevel returns undefined for non-reasoning models", () => {
+  assert.equal(resolveMaxLevel({ id: "plain-model", reasoning: false }), undefined);
+  assert.equal(resolveMaxLevel(null), undefined);
+});
+
+// ─── supportsXhighThinking ───────────────────────────────────────────
+
+test("supportsXhighThinking matches Pi-level gpt-5.4 and opus-4.6 families", () => {
+  assert.equal(supportsXhighThinking({ id: "gpt-5.4", reasoning: true }), true);
+  assert.equal(supportsXhighThinking({ id: "claude-opus-4.6", reasoning: true }), true);
+  assert.equal(supportsXhighThinking({ id: "minimax/minimax-m2.7", reasoning: true }), false);
+});
+
+// ─── getAvailableThinkingLevels / getUserFacingLevels ────────────────
+
+test("getAvailableThinkingLevels includes off for all reasoning models", () => {
+  assert.deepEqual(getAvailableThinkingLevels({ id: "plain-model", reasoning: false }), ["off"]);
+  assert.deepEqual(getAvailableThinkingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+    "off", "minimal", "low", "medium", "high",
+  ]);
+  assert.deepEqual(getAvailableThinkingLevels({ id: "gpt-5.4", reasoning: true }), [
+    "off", "minimal", "low", "medium", "high", "xhigh",
+  ]);
+});
+
+test("getUserFacingLevels excludes off", () => {
+  assert.deepEqual(getUserFacingLevels({ id: "plain-model", reasoning: false }), []);
+  assert.deepEqual(getUserFacingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+    "minimal", "low", "medium", "high",
+  ]);
+  assert.deepEqual(getUserFacingLevels({ id: "gpt-5.4", reasoning: true }), [
+    "minimal", "low", "medium", "high", "xhigh",
+  ]);
+});
+
+// ─── cycleLevel ──────────────────────────────────────────────────────
+
+test("cycleLevel advances through user-facing levels", () => {
+  const model = { id: "gpt-5.4", reasoning: true } as const;
+  assert.equal(cycleLevel("minimal", model), "low");
+  assert.equal(cycleLevel("medium", model), "high");
+  assert.equal(cycleLevel("xhigh", model), "minimal"); // wraps
+});
+
+test("cycleLevel returns first level for unknown current", () => {
+  const model = { id: "gpt-5.4", reasoning: true } as const;
+  assert.equal(cycleLevel("off", model), "minimal");
+  assert.equal(cycleLevel("unknown", model), "minimal");
+});
+
+test("cycleLevel returns undefined for non-reasoning models", () => {
+  assert.equal(cycleLevel("high", { id: "plain-model", reasoning: false }), undefined);
+});
+
+// ─── Settings persistence ────────────────────────────────────────────
 
 test("writeDefaultThinkingLevel preserves unrelated settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
@@ -87,55 +200,8 @@ test("writeDefaultThinkingLevel uses atomic write", () => {
 
   const files = readdirSync(dir);
   assert.equal(files.includes("settings.json"), true);
-  // No temp files should remain
   const tempFiles = files.filter((f) => f.startsWith(".settings.json.tmp"));
   assert.equal(tempFiles.length, 0);
-});
-
-test("USAGE includes the slash command", () => {
-  assert.match(USAGE, /\/effort/);
-});
-
-test("supportsXhighThinking matches Pi-level gpt-5.4 and opus-4.6 families", () => {
-  assert.equal(supportsXhighThinking({ id: "gpt-5.4", reasoning: true }), true);
-  assert.equal(supportsXhighThinking({ id: "claude-opus-4.6", reasoning: true }), true);
-  assert.equal(supportsXhighThinking({ id: "minimax/minimax-m2.7", reasoning: true }), false);
-});
-
-test("supportsXhighThinking accepts custom patterns", () => {
-  assert.equal(supportsXhighThinking({ id: "custom-xhigh-model", reasoning: true }, ["custom-xhigh"]), true);
-  assert.equal(supportsXhighThinking({ id: "custom-xhigh-model", reasoning: true }, ["other-pattern"]), false);
-});
-
-test("getAvailableThinkingLevels reflects reasoning and xhigh support", () => {
-  assert.deepEqual(getAvailableThinkingLevels({ id: "plain-model", reasoning: false }), ["off"]);
-  assert.deepEqual(getAvailableThinkingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-  ]);
-  assert.deepEqual(getAvailableThinkingLevels({ id: "gpt-5.4", reasoning: true }), [
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-  ]);
-});
-
-test("getAvailableThinkingLevels respects configurable xhigh patterns", () => {
-  const settings = { xhighModelPatterns: ["custom-reasoning"] };
-  assert.deepEqual(getAvailableThinkingLevels({ id: "custom-reasoning-v1", reasoning: true }, settings), [
-    "off",
-    "minimal",
-    "low",
-    "medium",
-    "high",
-    "xhigh",
-  ]);
 });
 
 test("getDefaultThinkingLevel returns undefined on corrupt JSON", () => {
@@ -150,8 +216,15 @@ test("getDefaultThinkingLevel returns undefined on unreadable settings", () => {
   const dir = mkdtempSync(join(tmpdir(), "pi-effort-"));
   const settingsPath = join(dir, "settings.json");
   writeFileSync(settingsPath, "{}");
-  // Simulate a permission error by pointing to a directory instead of a file
   const badPath = dir; // readFileSync on a directory throws EISDIR
 
   assert.equal(getDefaultThinkingLevel(badPath), undefined);
+});
+
+// ─── USAGE ───────────────────────────────────────────────────────────
+
+test("USAGE includes min and max", () => {
+  assert.match(USAGE, /min/);
+  assert.match(USAGE, /max/);
+  assert.match(USAGE, /\/effort/);
 });
