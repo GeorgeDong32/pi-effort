@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
 import {
   THINKING_LEVELS,
@@ -13,6 +13,10 @@ function buildShowMessage(settingsPath: string, current: string): string {
   const defaultLevel = getDefaultThinkingLevel(settingsPath);
   const defaultText = defaultLevel ?? "(unset)";
   return `Effort: current=${current} | default=${defaultText}`;
+}
+
+function updateEffortStatus(ctx: ExtensionCommandContext, current: string): void {
+  ctx.ui.setStatus("effort", `effort:${current}`);
 }
 
 export default function effortExtension(pi: ExtensionAPI): void {
@@ -62,17 +66,22 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
       switch (command.kind) {
         case "help":
+          updateEffortStatus(ctx, pi.getThinkingLevel());
           ctx.ui.notify(formatUsage(), "info");
           return;
 
-        case "show":
+        case "show": {
+          const current = pi.getThinkingLevel();
+          updateEffortStatus(ctx, current);
           ctx.ui.notify(buildShowMessage(settingsPath, pi.getThinkingLevel()), "info");
           return;
+        }
 
         case "set-session": {
           const before = pi.getThinkingLevel();
           pi.setThinkingLevel(command.level);
           const after = pi.getThinkingLevel();
+          updateEffortStatus(ctx, after);
           if (after === command.level) {
             ctx.ui.notify(`Effort changed: ${before} -> ${after}`, "info");
           } else {
@@ -93,6 +102,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
             return;
           }
 
+          updateEffortStatus(ctx, pi.getThinkingLevel());
           if (command.level === null) {
             ctx.ui.notify("Default effort cleared for future sessions.", "info");
           } else {
