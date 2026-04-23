@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.3] - 2026-04-23
+
+### Changed
+- Capability detection delegated to upstream `supportsXhigh()` from `@mariozechner/pi-ai`; removed local `DEFAULT_XHIGH_PATTERNS` and `supportsXhighThinking`. Extension now auto-adapts to new xhigh-capable models introduced upstream.
+- Tab completion now filters thinking levels by the current model's capabilities.
+- peerDependencies pinned to `>=0.69.0 <1.0.0` (was `*`) — protects against pre-1.0 upstream breaks.
+
+### Fixed
+- `package.json` version field corrected (was `0.1.0` despite CHANGELOG at 0.0.2).
+
+### Added
+- GitHub Actions CI running type-check and tests on Node 20/22.
+- README attribution to upstream pi and Mario Zechner.
+
 ## [0.0.2] - 2026-04-23
 
 ### Added

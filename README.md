@@ -1,5 +1,7 @@
 # pi-effort
 
+Extension for [pi](https://github.com/badlogic/pi-mono) — a provider-agnostic terminal coding agent by Mario Zechner.
+
 Pi extension for controlling thinking/effort with model-adaptive `min`/`max` aliases.
 
 ## Goal
@@ -31,7 +33,7 @@ Provide a `/effort` command that adapts to the current model:
 | Reasoning (standard) | `minimal` | `high` | minimal, low, medium, high |
 | Reasoning (xhigh-capable) | `minimal` | `xhigh` | minimal, low, medium, high, xhigh |
 
-xhigh-capable models in Pi: `gpt-5.2*`, `gpt-5.3*`, `gpt-5.4*`, `opus-4.6*`, `opus-4.7*`.
+xhigh-capable models are determined by pi-ai's `supportsXhigh()`. Run `/effort options` to see what the current model supports.
 
 ### Defaults
 

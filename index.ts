@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { getAgentDir } from "@mariozechner/pi-coding-agent";
+import { supportsXhigh } from "@mariozechner/pi-ai";
 import { Key } from "@mariozechner/pi-tui";
 import {
   ALL_LEVELS,
@@ -60,6 +61,9 @@ function applySessionLevel(
 }
 
 export default function effortExtension(pi: ExtensionAPI): void {
+  // ─── Closure: track current model for tab completion ─────────────
+  let currentModel: EffortModel | null = null;
+
   // ─── CLI flag ────────────────────────────────────────────────────
   pi.registerFlag("effort", {
     description: "Initial thinking effort level (min|max|minimal|low|medium|high|xhigh)",
@@ -85,6 +89,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
   // ─── session_start: set footer status + apply --effort flag ──────
   pi.on("session_start", (_event, ctx) => {
+    // Track model for tab completion
+    currentModel = ctx.model ?? null;
     // Show current effort in footer
     updateEffortStatus(ctx, pi.getThinkingLevel());
 
@@ -118,6 +124,8 @@ export default function effortExtension(pi: ExtensionAPI): void {
 
   // ─── model_select: warn if current level exceeds new model's max ─
   pi.on("model_select", (event, ctx) => {
+    // Track model for tab completion
+    currentModel = event.model;
     const current = pi.getThinkingLevel();
     const available = getAvailableThinkingLevels(event.model);
     const userLevels = getUserFacingLevels(event.model);
@@ -148,8 +156,16 @@ export default function effortExtension(pi: ExtensionAPI): void {
       const tokens = value.split(/\s+/).filter(Boolean);
       const trailingSpace = /\s$/.test(value);
 
-      // Top-level completions: min, max, explicit levels, subcommands
-      const topLevel = [...SEMANTIC_ALIASES, ...USER_LEVELS, "show", "options", "default"];
+      // Build model-aware level list for completions
+      const modelLevels: EffortLevel[] = currentModel?.reasoning
+        ? supportsXhigh(currentModel as Parameters<typeof supportsXhigh>[0])
+          ? [...USER_LEVELS]
+          : USER_LEVELS.filter((l) => l !== "xhigh")
+        : [];
+      const modelAliases = currentModel?.reasoning ? [...SEMANTIC_ALIASES] : [];
+
+      // Top-level completions: min, max (if reasoning), explicit levels (filtered), subcommands
+      const topLevel = [...modelAliases, ...modelLevels, "show", "options", "default"];
 
       if (tokens.length === 0) {
         return topLevel.map((t) => ({ value: t, label: t }));
@@ -164,7 +180,7 @@ export default function effortExtension(pi: ExtensionAPI): void {
       // "default" subcommand completions
       if (tokens[0] === "default") {
         const secondPrefix = trailingSpace ? "" : tokens[1] ?? "";
-        const defaultOptions = [...SEMANTIC_ALIASES, ...USER_LEVELS, "clear"];
+        const defaultOptions = [...modelAliases, ...modelLevels, "clear"];
         return defaultOptions
           .filter((t) => t.startsWith(secondPrefix))
           .map((t) => ({ value: `default ${t}`, label: t }));

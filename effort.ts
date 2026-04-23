@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { supportsXhigh } from "@mariozechner/pi-ai";
 import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
 
 /**
@@ -12,7 +13,7 @@ export const ALL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] a
 export const ALL_LEVELS_WITHOUT_XHIGH = ["off", "minimal", "low", "medium", "high"] as const;
 
 /** Levels shown to users in USAGE, tab completion, and /effort options. */
-export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const;
+export const USER_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const satisfies readonly ThinkingLevel[];
 
 /** Semantic aliases that resolve per-model. */
 export const SEMANTIC_ALIASES = ["min", "max"] as const;
@@ -126,25 +127,10 @@ export function parseEffortCommand(args: string): EffortCommand {
 
 // ─── Model capability resolution ────────────────────────────────────
 
-const DEFAULT_XHIGH_PATTERNS = [
-  "gpt-5.2",
-  "gpt-5.3",
-  "gpt-5.4",
-  "opus-4-6",
-  "opus-4.6",
-  "opus-4-7",
-  "opus-4.7",
-];
-
-export function supportsXhighThinking(model: EffortModel | null | undefined): boolean {
-  if (!model) return false;
-  return DEFAULT_XHIGH_PATTERNS.some((p) => model.id.includes(p));
-}
-
 /** Levels available for the given model, including "off". */
 export function getAvailableThinkingLevels(model: EffortModel | null | undefined): EffortLevel[] {
   if (!model || !model.reasoning) return ["off"];
-  return supportsXhighThinking(model) ? [...ALL_LEVELS] : [...ALL_LEVELS_WITHOUT_XHIGH];
+  return supportsXhigh(model as Model<any>) ? [...ALL_LEVELS] : [...ALL_LEVELS_WITHOUT_XHIGH];
 }
 
 /** Levels shown to the user for the given model (excludes "off"). */
@@ -167,7 +153,7 @@ export function resolveMinLevel(model: EffortModel | null | undefined): EffortLe
  */
 export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
   if (!model?.reasoning) return undefined;
-  return supportsXhighThinking(model) ? "xhigh" : "high";
+  return supportsXhigh(model as Model<any>) ? "xhigh" : "high";
 }
 
 /** Cycle to the next effort level for the given model. Wraps around. */

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { ThinkingLevel } from "@mariozechner/pi-ai";
 import {
   USAGE,
   USER_LEVELS,
@@ -12,10 +13,16 @@ import {
   parseEffortCommand,
   resolveMaxLevel,
   resolveMinLevel,
-  supportsXhighThinking,
   cycleLevel,
   writeDefaultThinkingLevel,
 } from "../effort.ts";
+
+// If @mariozechner/pi-ai adds a new ThinkingLevel (e.g. "xmax"), this
+// refuses to compile until USER_LEVELS is extended. Removal is already
+// caught by `satisfies readonly ThinkingLevel[]` in effort.ts.
+type _UncoveredLevels = Exclude<ThinkingLevel, (typeof USER_LEVELS)[number]>;
+const _driftCheck: [_UncoveredLevels] extends [never] ? true : never = true;
+void _driftCheck;
 
 // ─── parseEffortCommand ──────────────────────────────────────────────
 
@@ -104,12 +111,24 @@ test("resolveMaxLevel returns undefined for non-reasoning models", () => {
   assert.equal(resolveMaxLevel(null), undefined);
 });
 
-// ─── supportsXhighThinking ───────────────────────────────────────────
+// ─── xhigh capability (via public functions) ─────────────────────────
 
-test("supportsXhighThinking matches Pi-level gpt-5.4 and opus-4.6 families", () => {
-  assert.equal(supportsXhighThinking({ id: "gpt-5.4", reasoning: true }), true);
-  assert.equal(supportsXhighThinking({ id: "claude-opus-4.6", reasoning: true }), true);
-  assert.equal(supportsXhighThinking({ id: "minimax/minimax-m2.7", reasoning: true }), false);
+test("xhigh capability: gpt-5.4 includes xhigh in available levels", () => {
+  assert.deepEqual(getAvailableThinkingLevels({ id: "gpt-5.4", reasoning: true }), [
+    "off", "minimal", "low", "medium", "high", "xhigh",
+  ]);
+});
+
+test("xhigh capability: opus-4.6 includes xhigh in available levels", () => {
+  assert.deepEqual(getAvailableThinkingLevels({ id: "claude-opus-4.6", reasoning: true }), [
+    "off", "minimal", "low", "medium", "high", "xhigh",
+  ]);
+});
+
+test("xhigh capability: minimax does not include xhigh in available levels", () => {
+  assert.deepEqual(getAvailableThinkingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+    "off", "minimal", "low", "medium", "high",
+  ]);
 });
 
 // ─── getAvailableThinkingLevels / getUserFacingLevels ────────────────
@@ -227,4 +246,25 @@ test("USAGE includes min and max", () => {
   assert.match(USAGE, /min/);
   assert.match(USAGE, /max/);
   assert.match(USAGE, /\/effort/);
+});
+
+// ─── Completion filtering (via getUserFacingLevels) ──────────────────
+
+test("completion filter: non-reasoning model — no thinking levels", () => {
+  const model = { id: "some-gpt-3.5", reasoning: false };
+  const levels = getUserFacingLevels(model);
+  assert.deepEqual(levels, []);
+});
+
+test("completion filter: reasoning model without xhigh — includes high but not xhigh", () => {
+  const model = { id: "minimax/minimax-m2.7", reasoning: true };
+  const levels = getUserFacingLevels(model);
+  assert.ok(levels.includes("high"), "should include high");
+  assert.equal(levels.includes("xhigh" as any), false, "should not include xhigh");
+});
+
+test("completion filter: xhigh-capable model — includes xhigh", () => {
+  const model = { id: "gpt-5.4", reasoning: true };
+  const levels = getUserFacingLevels(model);
+  assert.ok(levels.includes("xhigh" as any), "should include xhigh");
 });
