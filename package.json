@@ -1,6 +1,6 @@
 {
   "name": "pi-effort",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
   "type": "module",
   "license": "Apache-2.0",
