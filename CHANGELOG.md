@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-05-04
+
+### Fixed
+- Restored compatibility with Pi 0.72 by replacing the removed `supportsXhigh()` helper with `getSupportedThinkingLevels()`.
+- Updated xhigh capability tests to use Pi's `thinkingLevelMap` metadata shape.
+
+### Changed
+- Updated development dependencies to Pi 0.72.1 for release verification.
+
 ## [0.0.4] - 2026-04-29
 
 ### Changed

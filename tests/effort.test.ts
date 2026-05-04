@@ -25,6 +25,10 @@ type _UncoveredLevels = Exclude<ThinkingLevel, (typeof USER_LEVELS)[number]>;
 const _driftCheck: [_UncoveredLevels] extends [never] ? true : never = true;
 void _driftCheck;
 
+const standardReasoningModel = { id: "minimax/minimax-m2.7", reasoning: true } as const;
+const xhighReasoningModel = { id: "gpt-5.4", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
+const opusXhighReasoningModel = { id: "claude-opus-4.6", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
+
 // ─── parseEffortCommand ──────────────────────────────────────────────
 
 test("parseEffortCommand handles show and help", () => {
@@ -90,8 +94,8 @@ test("parseEffortCommand does not suggest distant typos", () => {
 // ─── resolveMinLevel / resolveMaxLevel ───────────────────────────────
 
 test("resolveMinLevel returns minimal for reasoning models", () => {
-  assert.equal(resolveMinLevel({ id: "minimax/minimax-m2.7", reasoning: true }), "minimal");
-  assert.equal(resolveMinLevel({ id: "gpt-5.4", reasoning: true }), "minimal");
+  assert.equal(resolveMinLevel(standardReasoningModel), "minimal");
+  assert.equal(resolveMinLevel(xhighReasoningModel), "minimal");
 });
 
 test("resolveMinLevel returns undefined for non-reasoning models", () => {
@@ -100,12 +104,12 @@ test("resolveMinLevel returns undefined for non-reasoning models", () => {
 });
 
 test("resolveMaxLevel returns high for reasoning models without xhigh", () => {
-  assert.equal(resolveMaxLevel({ id: "minimax/minimax-m2.7", reasoning: true }), "high");
+  assert.equal(resolveMaxLevel(standardReasoningModel), "high");
 });
 
 test("resolveMaxLevel returns xhigh for xhigh-capable models", () => {
-  assert.equal(resolveMaxLevel({ id: "gpt-5.4", reasoning: true }), "xhigh");
-  assert.equal(resolveMaxLevel({ id: "claude-opus-4.6", reasoning: true }), "xhigh");
+  assert.equal(resolveMaxLevel(xhighReasoningModel), "xhigh");
+  assert.equal(resolveMaxLevel(opusXhighReasoningModel), "xhigh");
 });
 
 test("resolveMaxLevel returns undefined for non-reasoning models", () => {
@@ -114,8 +118,8 @@ test("resolveMaxLevel returns undefined for non-reasoning models", () => {
 });
 
 test("resolveEffortLevel resolves semantic aliases per model", () => {
-  const standard = { id: "minimax/minimax-m2.7", reasoning: true } as const;
-  const xhigh = { id: "gpt-5.4", reasoning: true } as const;
+  const standard = standardReasoningModel;
+  const xhigh = xhighReasoningModel;
 
   assert.equal(resolveEffortLevel("min", standard), "minimal");
   assert.equal(resolveEffortLevel("max", standard), "high");
@@ -127,19 +131,19 @@ test("resolveEffortLevel resolves semantic aliases per model", () => {
 // ─── xhigh capability (via public functions) ─────────────────────────
 
 test("xhigh capability: gpt-5.4 includes xhigh in available levels", () => {
-  assert.deepEqual(getAvailableThinkingLevels({ id: "gpt-5.4", reasoning: true }), [
+  assert.deepEqual(getAvailableThinkingLevels(xhighReasoningModel), [
     "off", "minimal", "low", "medium", "high", "xhigh",
   ]);
 });
 
 test("xhigh capability: opus-4.6 includes xhigh in available levels", () => {
-  assert.deepEqual(getAvailableThinkingLevels({ id: "claude-opus-4.6", reasoning: true }), [
+  assert.deepEqual(getAvailableThinkingLevels(opusXhighReasoningModel), [
     "off", "minimal", "low", "medium", "high", "xhigh",
   ]);
 });
 
 test("xhigh capability: minimax does not include xhigh in available levels", () => {
-  assert.deepEqual(getAvailableThinkingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+  assert.deepEqual(getAvailableThinkingLevels(standardReasoningModel), [
     "off", "minimal", "low", "medium", "high",
   ]);
 });
@@ -148,20 +152,20 @@ test("xhigh capability: minimax does not include xhigh in available levels", () 
 
 test("getAvailableThinkingLevels includes off for all reasoning models", () => {
   assert.deepEqual(getAvailableThinkingLevels({ id: "plain-model", reasoning: false }), ["off"]);
-  assert.deepEqual(getAvailableThinkingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+  assert.deepEqual(getAvailableThinkingLevels(standardReasoningModel), [
     "off", "minimal", "low", "medium", "high",
   ]);
-  assert.deepEqual(getAvailableThinkingLevels({ id: "gpt-5.4", reasoning: true }), [
+  assert.deepEqual(getAvailableThinkingLevels(xhighReasoningModel), [
     "off", "minimal", "low", "medium", "high", "xhigh",
   ]);
 });
 
 test("getUserFacingLevels excludes off", () => {
   assert.deepEqual(getUserFacingLevels({ id: "plain-model", reasoning: false }), []);
-  assert.deepEqual(getUserFacingLevels({ id: "minimax/minimax-m2.7", reasoning: true }), [
+  assert.deepEqual(getUserFacingLevels(standardReasoningModel), [
     "minimal", "low", "medium", "high",
   ]);
-  assert.deepEqual(getUserFacingLevels({ id: "gpt-5.4", reasoning: true }), [
+  assert.deepEqual(getUserFacingLevels(xhighReasoningModel), [
     "minimal", "low", "medium", "high", "xhigh",
   ]);
 });
@@ -169,14 +173,14 @@ test("getUserFacingLevels excludes off", () => {
 // ─── cycleLevel ──────────────────────────────────────────────────────
 
 test("cycleLevel advances through user-facing levels", () => {
-  const model = { id: "gpt-5.4", reasoning: true } as const;
+  const model = xhighReasoningModel;
   assert.equal(cycleLevel("minimal", model), "low");
   assert.equal(cycleLevel("medium", model), "high");
   assert.equal(cycleLevel("xhigh", model), "minimal"); // wraps
 });
 
 test("cycleLevel returns first level for unknown current", () => {
-  const model = { id: "gpt-5.4", reasoning: true } as const;
+  const model = xhighReasoningModel;
   assert.equal(cycleLevel("off", model), "minimal");
   assert.equal(cycleLevel("unknown", model), "minimal");
 });
@@ -281,14 +285,14 @@ test("completion filter: non-reasoning model — no thinking levels", () => {
 });
 
 test("completion filter: reasoning model without xhigh — includes high but not xhigh", () => {
-  const model = { id: "minimax/minimax-m2.7", reasoning: true };
+  const model = standardReasoningModel;
   const levels = getUserFacingLevels(model);
   assert.ok(levels.includes("high"), "should include high");
   assert.equal(levels.includes("xhigh" as any), false, "should not include xhigh");
 });
 
 test("completion filter: xhigh-capable model — includes xhigh", () => {
-  const model = { id: "gpt-5.4", reasoning: true };
+  const model = xhighReasoningModel;
   const levels = getUserFacingLevels(model);
   assert.ok(levels.includes("xhigh" as any), "should include xhigh");
 });

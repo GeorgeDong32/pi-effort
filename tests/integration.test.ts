@@ -42,6 +42,7 @@ const xhighModel: Model<any> = {
   provider: "openrouter",
   baseUrl: "https://openrouter.ai/api/v1",
   reasoning: true,
+  thinkingLevelMap: { xhigh: "xhigh" },
   input: ["text"],
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   contextWindow: 196608,

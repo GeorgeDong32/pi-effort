@@ -1,6 +1,6 @@
 {
   "name": "pi-effort",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
   "type": "module",
   "license": "Apache-2.0",
@@ -47,8 +47,8 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@mariozechner/pi-ai": "^0.69.0",
-    "@mariozechner/pi-coding-agent": "^0.69.0",
+    "@mariozechner/pi-ai": "^0.72.1",
+    "@mariozechner/pi-coding-agent": "^0.72.1",
     "@types/node": "^24.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { supportsXhigh } from "@mariozechner/pi-ai";
+import { getSupportedThinkingLevels } from "@mariozechner/pi-ai";
 import type { Model, ThinkingLevel } from "@mariozechner/pi-ai";
 
 /**
@@ -48,7 +48,7 @@ export type EffortCommand =
   | { kind: "set-default-max" }
   | { kind: "set-default"; level: EffortLevel | null };
 
-export type EffortModel = Pick<Model<any>, "id" | "reasoning">;
+export type EffortModel = Pick<Model<any>, "id" | "reasoning" | "thinkingLevelMap">;
 
 // ─── Suggestion helpers ─────────────────────────────────────────────
 
@@ -134,8 +134,8 @@ export function parseEffortCommand(args: string): EffortCommand {
 
 /** Levels available for the given model, including "off". */
 export function getAvailableThinkingLevels(model: EffortModel | null | undefined): EffortLevel[] {
-  if (!model || !model.reasoning) return ["off"];
-  return supportsXhigh(model as Model<any>) ? [...ALL_LEVELS] : [...ALL_LEVELS_WITHOUT_XHIGH];
+  if (!model) return ["off"];
+  return getSupportedThinkingLevels(model as Model<any>).filter(isEffortLevel);
 }
 
 /** Levels shown to the user for the given model (excludes "off"). */
@@ -158,7 +158,7 @@ export function resolveMinLevel(model: EffortModel | null | undefined): EffortLe
  */
 export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
   if (!model?.reasoning) return undefined;
-  return supportsXhigh(model as Model<any>) ? "xhigh" : "high";
+  return getAvailableThinkingLevels(model).includes("xhigh") ? "xhigh" : "high";
 }
 
 /** Resolve a user-facing level or semantic alias against the active model. */
