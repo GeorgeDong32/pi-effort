@@ -1,18 +1,18 @@
 {
   "name": "pi-effort",
-  "version": "0.0.5",
+  "version": "0.1.0",
   "packageManager": "bun@1.3.13",
   "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
   "type": "module",
   "license": "Apache-2.0",
-  "author": "Ricardo A S Frantz",
+  "author": "GeorgeDong32",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ricardofrantz/pi-effort.git"
+    "url": "git+https://github.com/GeorgeDong32/pi-effort.git"
   },
-  "homepage": "https://github.com/ricardofrantz/pi-effort#readme",
+  "homepage": "https://github.com/GeorgeDong32/pi-effort#readme",
   "bugs": {
-    "url": "https://github.com/ricardofrantz/pi-effort/issues"
+    "url": "https://github.com/GeorgeDong32/pi-effort/issues"
   },
   "keywords": [
     "pi-package",

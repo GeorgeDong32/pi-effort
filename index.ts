@@ -262,11 +262,13 @@ export default function effortExtension(pi: ExtensionAPI): void {
       {
         overlay: true,
         overlayOptions: {
-          // Picker needs ~64 columns: 4 END_INSET (2 each side) + room for
-          // 4 labels ("low/medium/high/xhigh") with breathing room between
-          // them. Smaller terminals get clamped to the overlay minWidth.
-          width: 64,
-          minWidth: 64,
+          // Pi's main region can be as narrow as ~50 columns when a side
+          // panel (extensions, model list, etc.) is open. Using a fixed
+          // minWidth that exceeds the typical side-panel width ensures the
+          // overlay extends beyond the side panel rather than getting
+          // squeezed into the main region.
+          width: 78,
+          minWidth: 72,
           maxHeight: "40%",
           anchor: "center",
         },

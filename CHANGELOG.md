@@ -6,13 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-01
+
 ### Added
 - `/fast` toggle plus `/fast on|off` overrides for OpenAI/Codex priority service tier.
 - Compact footer status keys for powerline custom items: `pi-effort-thinking` and `pi-effort-fast`.
-- Bare `/effort` now opens an interactive picker overlay (←/→ to adjust, Enter to confirm, Esc to cancel). Levels are limited to those supported by the current model; the strongest level sits flush against the right edge. Falls back to `ctx.ui.select` in non-TUI modes.
+- Bare `/effort` now opens an interactive picker overlay (←/→ to adjust, Enter to confirm, Esc to cancel). Levels are limited to those supported by the current model; the picker wraps content in a white box-drawing border. Falls back to `ctx.ui.select` in non-TUI modes.
 
 ### Changed
 - Simplified the slash-command surface to `/effort {min|minimal|low|medium|high|xhigh|max}` and `/fast [on|off]`.
+- Picker hides `minimal` by default (still reachable via `/effort minimal`) so the slider stays compact at low/medium/high[/xhigh].
 
 ## [0.0.5] - 2026-05-04
 

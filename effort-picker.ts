@@ -27,12 +27,13 @@ export interface EffortPickerOptions {
 
 const TITLE = "Effort";
 const FOOTER = "←/→ to adjust · Enter to confirm · Esc to cancel";
-// Outer padding inside the overlay (kept for backwards compatibility) plus
-// the per-end inset applied to the label row so the leftmost/rightmost label
-// never collides with the overlay border.
-const HORIZONTAL_PAD = 0;
-const END_INSET = 2; // columns reserved at each end of the slider/labels row
-const MIN_INNER_WIDTH = 28;
+// Columns reserved at each end of the slider/labels row so the leftmost /
+// rightmost label never collides with the box border.
+const END_INSET = 2;
+// Minimum inner content width. The final framed box is +2 columns (for the
+// two vertical border characters), so the overlay should set its minWidth
+// to at least this + 2.
+const MIN_INNER_WIDTH = 32;
 
 /**
  * Build a horizontal-selector component for /effort.
@@ -137,41 +138,54 @@ class EffortPickerComponent implements Component {
   }
 
   private computeLines(width: number): string[] {
-    // Title and footer are centered across the full viewport; the slider and
-    // labels row is centered too but reserves `END_INSET` columns on each
-    // side so the leftmost/rightmost label never touches the overlay border.
-    const innerWidth = Math.max(MIN_INNER_WIDTH, width - HORIZONTAL_PAD * 2);
-    const pad = (line: string): string => padLine(line, width);
+    // Render content into a fixed inner width (the "frame" the border wraps).
+    // Two extra rows of vertical margin separate content from the top/bottom
+    // border so the box breathes.
+    const innerWidth = Math.max(MIN_INNER_WIDTH, width - 2);
     const dim = (text: string): string => this.theme?.fg("dim", text) ?? text;
     const inverse = (text: string): string => this.theme?.inverse(text) ?? text;
     const bold = (text: string): string => this.theme?.bold(text) ?? text;
     const muted = (text: string): string => this.theme?.fg("muted", text) ?? text;
+    // Border is forced to bright white so the box reads cleanly on both light
+    // and dark themes regardless of the theme's border color choice.
+    const borderColor = (text: string): string => `\x1b[97m${text}\x1b[39m`;
 
-    const title = pad(bold(this.theme?.fg("accent", TITLE) ?? TITLE));
+    const titleText = bold(this.theme?.fg("accent", TITLE) ?? TITLE);
+    const footerText = dim(FOOTER);
 
+    const contentLines: string[] = [];
     if (this.levels.length === 0) {
-      return [title, pad(""), pad(muted("No effort levels available for this model.")), pad(""), pad(dim(FOOTER))];
-    }
-
-    if (this.levels.length === 1) {
+      contentLines.push(centerInWidth(titleText, innerWidth));
+      contentLines.push("");
+      contentLines.push(centerInWidth(muted("No effort levels available for this model."), innerWidth));
+      contentLines.push("");
+      contentLines.push(centerInWidth(footerText, innerWidth));
+    } else if (this.levels.length === 1) {
       const only = inverse(bold(this.levels[0]));
-      const ruler = pad("▲");
-      const labels = pad(only);
-      return [title, pad(""), ruler, labels, pad(dim(FOOTER))];
+      contentLines.push(centerInWidth(titleText, innerWidth));
+      contentLines.push("");
+      contentLines.push(centerInWidth("▲", innerWidth));
+      contentLines.push(centerInWidth(only, innerWidth));
+      contentLines.push(centerInWidth(footerText, innerWidth));
+    } else {
+      // Layout labels within the inner width, with END_INSET columns of margin
+      // reserved at each end so the leftmost/rightmost label never touches
+      // the box border.
+      const trackWidth = Math.max(this.levels.length * 2, innerWidth - END_INSET * 2);
+      const positions = layoutLabelPositions(this.levels, trackWidth, END_INSET);
+      const rowWidth = trackWidth + END_INSET * 2;
+      const labelWidths = this.levels.map((l) => visibleWidth(l));
+      const sliderLine = buildSliderLine(positions, this.selectedIndex, rowWidth, END_INSET, muted, labelWidths);
+      const labelsLine = buildLabelsLine(this.levels, positions, this.selectedIndex, inverse, bold, labelWidths);
+
+      contentLines.push(centerInWidth(titleText, innerWidth));
+      contentLines.push("");
+      contentLines.push(centerInWidth(sliderLine, innerWidth));
+      contentLines.push(centerInWidth(labelsLine, innerWidth));
+      contentLines.push(centerInWidth(footerText, innerWidth));
     }
 
-    // Layout labels within the inner width, with END_INSET columns of margin
-    // reserved at each end. This keeps the slider visually contained inside
-    // the overlay border even when levels are short.
-    const trackWidth = Math.max(this.levels.length * 2, innerWidth - END_INSET * 2);
-    const positions = layoutLabelPositions(this.levels, trackWidth, END_INSET);
-    // Slider and labels rows share the same total length (= trackWidth + 2*END_INSET)
-    // so padLine centers them together and they line up visually.
-    const rowWidth = trackWidth + END_INSET * 2;
-    const sliderLine = buildSliderLine(positions, this.selectedIndex, rowWidth, END_INSET, muted);
-    const labelsLine = buildLabelsLine(this.levels, positions, this.selectedIndex, inverse, bold);
-
-    return [title, pad(""), pad(sliderLine), pad(labelsLine), pad(dim(FOOTER))];
+    return wrapInBox(contentLines, innerWidth, borderColor);
   }
 }
 
@@ -199,15 +213,21 @@ function buildSliderLine(
   selectedIndex: number,
   rowWidth: number,
   inset: number,
-  muted: (text: string) => string
+  muted: (text: string) => string,
+  labelWidths: number[]
 ): string {
   const char = muted("─");
   const caret = "▲";
-  // Build a column array of single-cell characters, then place the caret at
-  // the selected position. Both endpoints are reserved by `inset` columns of
-  // ─ to keep the caret from ever rendering at column 0 / rowWidth-1.
+  // Build a column array of single-cell characters, then place the caret on
+  // the column that visually centers over the selected label.
+  // Label center sits at `positions[i]`, but for an even-width label there
+  // is no exact center column — the visual midline falls between two chars.
+  // We place the caret on the left half of the midline so ▲ reads as
+  // centered over the label rather than shifted right by half a column.
   const cols: string[] = new Array(rowWidth).fill(char);
-  const caretCol = positions[selectedIndex];
+  const labelCol = positions[selectedIndex];
+  const labelWidth = labelWidths[selectedIndex] ?? 0;
+  const caretCol = labelWidth % 2 === 0 ? labelCol - 1 : labelCol;
   if (caretCol >= 0 && caretCol < rowWidth) {
     cols[caretCol] = caret;
   }
@@ -220,37 +240,43 @@ function buildLabelsLine(
   positions: number[],
   selectedIndex: number,
   inverse: (text: string) => string,
-  bold: (text: string) => string
+  bold: (text: string) => string,
+  labelWidths: number[]
 ): string {
-  // Size the buffer to cover the rightmost label end + the END_INSET margin
-  // (if any). Allocating a generous buffer keeps the splice-based styled
-  // label replacement simple.
+  // Size the buffer to cover the rightmost label end + the END_INSET margin.
   const innerWidth = positions[positions.length - 1] + END_INSET + 1;
-  // Each label is rendered as a sequence of visible-width cells centered on its position.
-  // We track used columns to avoid overlap.
   const cols: string[] = new Array(innerWidth).fill(" ");
-  const labelWidths = levels.map((l) => visibleWidth(l));
 
-  // First pass: fill unselected labels into the column buffer (left-to-right).
+  // Helper: column where the caret (▲) for label i sits. For odd-width labels
+  // this equals the label's center column; for even-width labels it falls on
+  // the left side of the visual midline so ▲ reads as centered over the word.
+  const caretColOf = (i: number): number => {
+    const w = labelWidths[i];
+    const center = positions[i];
+    return w % 2 === 0 ? center - 1 : center;
+  };
+
+  // First pass: fill unselected labels into the column buffer. Each label is
+  // written so its visual center column matches its caret column.
   for (let i = 0; i < levels.length; i++) {
     if (i === selectedIndex) continue;
-    const center = positions[i];
     const w = labelWidths[i];
-    const start = center - Math.floor(w / 2);
+    const caretCol = caretColOf(i);
+    // For odd w, caretCol = label center = start + floor(w/2).
+    // For even w, caretCol = center - 1 = start + (w/2 - 1) = start + w/2 - 1.
+    // Both cases reduce to: start = caretCol - floor(w/2).
+    const start = caretCol - Math.floor(w / 2);
     writeInto(cols, levels[i], start);
   }
 
-  // Second pass: overwrite with the selected label, styled.
+  // Second pass: overwrite with the selected label, styled (inverse+bold).
   const selectedLabel = levels[selectedIndex];
   const styled = inverse(bold(selectedLabel));
-  const center = positions[selectedIndex];
   const w = labelWidths[selectedIndex];
-  const start = center - Math.floor(w / 2);
-  // We need to write styled text but the surrounding cols are plain strings.
-  // Use a sparse buffer: collect segments.
-  // For simplicity here, since inverse styling is applied to plain ASCII labels,
-  // the visible width still equals labelWidths[selectedIndex]. We can splice the
-  // styled string into the plain-text column buffer by replacing the slice.
+  const caretCol = caretColOf(selectedIndex);
+  const start = caretCol - Math.floor(w / 2);
+  // Splice styled string into the column buffer; visible width of styled
+  // text still equals w (inverse/bold don't add visible cells).
   cols.splice(start, w, styled);
 
   return cols.join("");
@@ -272,15 +298,40 @@ function writeInto(cols: string[], text: string, start: number): void {
 
 /**
  * Center `line` (visible-width aware) within `width` by padding with spaces.
- * If the line is already wider than `width`, return it unchanged so the
- * overlay layer can decide how to handle overflow rather than silently
- * truncating content (which would clip the right-hand labels).
+ * If the line is already wider than `width`, return it unchanged.
  */
-function padLine(line: string, width: number): string {
+function centerInWidth(line: string, width: number): string {
   const vw = visibleWidth(line);
   if (vw >= width) return line;
   const totalPad = width - vw;
   const left = Math.floor(totalPad / 2);
   const right = totalPad - left;
   return " ".repeat(left) + line + " ".repeat(right);
+}
+
+/**
+ * Wrap `lines` (each at most `innerWidth` columns) in a box-drawing frame.
+ * The frame reserves one extra column on each side, so the total width
+ * including borders is `innerWidth + 2`. `borderColor` is applied to the
+ * box-drawing characters; content lines are left untouched.
+ *
+ * Vertical margin: one blank line inside the top and bottom borders so the
+ * title and footer have breathing room from the box edges.
+ */
+function wrapInBox(lines: string[], innerWidth: number, borderColor: (text: string) => string): string[] {
+  const top = borderColor("┌" + "─".repeat(innerWidth) + "┐");
+  const bottom = borderColor("└" + "─".repeat(innerWidth) + "┘");
+  const side = borderColor("│");
+  const framed: string[] = [top];
+  // Top margin row.
+  framed.push(side + " ".repeat(innerWidth) + side);
+  for (const line of lines) {
+    const vw = visibleWidth(line);
+    const pad = vw < innerWidth ? " ".repeat(innerWidth - vw) : "";
+    framed.push(side + line + pad + side);
+  }
+  // Bottom margin row.
+  framed.push(side + " ".repeat(innerWidth) + side);
+  framed.push(bottom);
+  return framed;
 }

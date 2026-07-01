@@ -48,21 +48,21 @@ test("picker seeds selectedIndex from currentLevel", () => {
 
 test("picker falls back to middle index when currentLevel is undefined", () => {
   const { component } = newPicker(LEVELS_5, undefined);
-  // No assertion on visible position without ANSI parsing — just render ok.
+  // 9 lines: top border + top margin + 5 content + bottom margin + bottom border.
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 test("picker falls back to middle index when currentLevel is unknown", () => {
   const { component } = newPicker(LEVELS_5, "not-a-level");
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 test("picker clamps currentLevel index when it is out of range", () => {
   const { component } = newPicker(LEVELS_3, "xhigh");
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 // ─── Arrow key navigation ──────────────────────────────────────────
@@ -74,7 +74,7 @@ test("ArrowRight advances selection", () => {
   handleInput(ENTER);
   // We can't read selectedIndex directly, but render before enter is fine.
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 test("ArrowLeft at index 0 is a no-op", () => {
@@ -153,47 +153,59 @@ test("input is ignored after dispose", () => {
 
 // ─── Render invariants ─────────────────────────────────────────────
 
-test("render returns 5 lines for non-empty levels", () => {
+test("render returns 9 lines for non-empty levels (top + margin + 5 content + margin + bottom)", () => {
   const { component } = newPicker(LEVELS_5, "medium");
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
+});
+
+test("render wraps the title in box-drawing border characters", () => {
+  const { component } = newPicker(LEVELS_5, "medium");
+  const lines = component.render(80);
+  // First line should start with ┌ and end with ┐ (possibly ANSI-styled).
+  const top = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
+  assert.ok(top.startsWith("┌"), `expected top border to start with ┌, got: ${top.slice(0, 5)}`);
+  assert.ok(top.endsWith("┐"), `expected top border to end with ┐, got: ${top.slice(-5)}`);
+  // Last line should start with └ and end with ┘.
+  const bottom = lines[lines.length - 1].replace(/\x1b\[[0-9;]*m/g, "");
+  assert.ok(bottom.startsWith("└"), `expected bottom border to start with └`);
+  assert.ok(bottom.endsWith("┘"), `expected bottom border to end with ┘`);
+});
+
+test("render sides are wrapped with vertical border characters", () => {
+  const { component } = newPicker(LEVELS_5, "medium");
+  const lines = component.render(80);
+  // Every line except the top and bottom borders should start/end with │.
+  for (let i = 1; i < lines.length - 1; i++) {
+    const stripped = lines[i].replace(/\x1b\[[0-9;]*m/g, "");
+    assert.ok(stripped.startsWith("│"), `line ${i} should start with │: ${stripped.slice(0, 5)}`);
+    assert.ok(stripped.endsWith("│"), `line ${i} should end with │: ${stripped.slice(-5)}`);
+  }
 });
 
 test("render centers the title within a sufficiently wide viewport", () => {
   const { component } = newPicker(LEVELS_5, "medium");
-  const lines = component.render(120);
-  // Title line: padLine centers the title text; with width=120, the title
-  // starts well past column 0.
-  const titleStripped = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-  const firstNonSpace = titleStripped.search(/\S/);
-  assert.ok(firstNonSpace > 0, "title should be centered (leading padding present)");
-});
-
-test("render fills the full viewport width (no truncation when wide enough)", () => {
-  // Slider and labels span the inner width; padLine centers them inside the
-  // requested width, so the resulting lines are exactly `width` columns.
-  const { component } = newPicker(LEVELS_5, "medium");
-  const lines = component.render(120);
-  assert.equal(visibleWidth(lines[2]), 120, "slider line fills the viewport");
-  assert.equal(visibleWidth(lines[3]), 120, "labels line fills the viewport");
-});
-
-test("render returns 5 lines for non-empty levels", () => {
-  const { component } = newPicker(LEVELS_5, "medium");
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  // Title is on content line index 1 (0=top border, 1=top margin+title, ...).
+  // Actually title is on content row 0 of the inner block, which maps to
+  // framed row 2 (top border + top margin + title).
+  const titleLine = lines[2].replace(/\x1b\[[0-9;]*m/g, "");
+  // Strip the leading │ and trailing │ to inspect the centered title text.
+  const inner = titleLine.slice(1, -1);
+  const firstNonSpace = inner.search(/\S/);
+  assert.ok(firstNonSpace > 0, "title should be centered (leading padding present)");
 });
 
 test("render handles a single-level list without throwing", () => {
   const { component } = newPicker(["medium"], "medium");
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 test("render handles empty levels gracefully", () => {
   const { component } = newPicker([], undefined);
   const lines = component.render(80);
-  assert.equal(lines.length, 5);
+  assert.equal(lines.length, 9);
 });
 
 test("render caches and invalidate forces a refresh", () => {
@@ -209,25 +221,29 @@ test("render caches and invalidate forces a refresh", () => {
 test("render survives narrow widths without throwing", () => {
   // The picker must not throw even when the overlay forces a tiny width.
   // Lines may overflow the requested width (we deliberately do not truncate),
-  // but every call must succeed and return 5 lines.
+  // but every call must succeed and return the full 9-line framed layout.
   const { component } = newPicker(LEVELS_5, "medium");
-  for (const width of [1, 5, 10, 20]) {
+  for (const width of [1, 5, 10, 20, 40]) {
     const lines = component.render(width);
-    assert.equal(lines.length, 5);
+    assert.equal(lines.length, 9);
   }
 });
 
 test("title line contains 'Effort'", () => {
   const { component } = newPicker(LEVELS_5, "medium");
   const lines = component.render(80);
-  const stripped = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-  assert.ok(stripped.includes("Effort"));
+  // Title is the first content row after the top border + top margin.
+  // Frame: top border (0), top margin (1), title (2), blank (3),
+  // slider (4), labels (5), footer (6), bottom margin (7), bottom border (8).
+  const titleLine = lines[2].replace(/\x1b\[[0-9;]*m/g, "");
+  assert.ok(titleLine.includes("Effort"), `expected 'Effort' in title line, got: ${titleLine}`);
 });
 
 test("footer line includes arrow and confirm hints", () => {
   const { component } = newPicker(LEVELS_5, "medium");
   const lines = component.render(80);
-  const footer = lines[4].replace(/\x1b\[[0-9;]*m/g, "");
+  // Footer is row 6 (after title, blank, slider, labels).
+  const footer = lines[6].replace(/\x1b\[[0-9;]*m/g, "");
   assert.ok(footer.includes("←") || footer.includes("<") || footer.includes("Left") || footer.includes("arrow"));
   assert.ok(footer.toLowerCase().includes("enter"));
   assert.ok(footer.toLowerCase().includes("esc") || footer.toLowerCase().includes("cancel"));
