@@ -19,6 +19,7 @@ import {
   toThinkingLevel,
   writeFastMode,
 } from "./effort.js";
+import { createEffortPickerComponent, type EffortPickerResult } from "./effort-picker.js";
 
 function modelName(model: EffortModel | null | undefined): string {
   return model?.id ?? "current model";
@@ -215,6 +216,70 @@ export default function effortExtension(pi: ExtensionAPI): void {
     ctx.ui.notify(`Fast mode ${fastMode ? "enabled" : "disabled"}.`, "info");
   }
 
+  // ─── Picker overlay for bare /effort ──────────────────────────────
+  // Shows the interactive effort selector and applies the user's choice via
+  // the same applySessionLevel path used by /effort <level>. Falls back to
+  // ctx.ui.select when the runtime is not in TUI mode (RPC/print).
+  async function showEffortPicker(ctx: ExtensionCommandContext): Promise<void> {
+    // Picker surfaces a curated subset: low/medium/high plus xhigh when the
+    // model supports it. "minimal" stays available via /effort minimal for
+    // power users but is hidden in the picker to keep the slider compact.
+    const allLevels = getUserFacingLevels(ctx.model);
+    const levels = allLevels.filter((l) => l !== "minimal");
+    if (levels.length === 0) {
+      ctx.ui.notify(`Thinking not available for ${modelName(ctx.model)}`, "error");
+      return;
+    }
+
+    if (!ctx.hasUI) {
+      const picked = await ctx.ui.select("Effort", levels);
+      if (picked && (levels as string[]).includes(picked)) {
+        applySessionLevel(pi, ctx, picked as EffortLevel, refreshFastMode());
+      }
+      return;
+    }
+
+    const currentLevel = pi.getThinkingLevel();
+    // Map a current level that isn't in the picker (e.g. "minimal") to the
+    // nearest visible level so the initial cursor lands somewhere sensible.
+    // Cast through string to bridge Pi's ThinkingLevel (includes "minimal")
+    // and our narrower EffortLevel used by the picker list.
+    const current: string = currentLevel;
+    const seededCurrent: string | undefined = (() => {
+      if ((levels as string[]).includes(current)) return current;
+      const idx = (allLevels as string[]).indexOf(current);
+      if (idx >= 0) return levels[Math.min(levels.length - 1, idx)];
+      return current;
+    })();
+
+    const result = await ctx.ui.custom<EffortPickerResult>(
+      (_tui, theme, _kb, done) => createEffortPickerComponent({
+        levels,
+        currentLevel: seededCurrent,
+        theme,
+        done,
+      }),
+      {
+        overlay: true,
+        overlayOptions: {
+          // Picker needs ~64 columns: 4 END_INSET (2 each side) + room for
+          // 4 labels ("low/medium/high/xhigh") with breathing room between
+          // them. Smaller terminals get clamped to the overlay minWidth.
+          width: 64,
+          minWidth: 64,
+          maxHeight: "40%",
+          anchor: "center",
+        },
+      },
+    );
+
+    if (result.action === "confirm" && result.level) {
+      applySessionLevel(pi, ctx, result.level as EffortLevel, refreshFastMode());
+    } else {
+      ctx.ui.notify("Cancelled", "info");
+    }
+  }
+
   // ─── /effort command ─────────────────────────────────────────────
   pi.registerCommand("effort", {
     description: "Set thinking effort (min/max adapt per model)",
@@ -239,6 +304,13 @@ export default function effortExtension(pi: ExtensionAPI): void {
       return null;
     },
     handler: async (args, ctx) => {
+      // Bare /effort → open the interactive picker. Keep the parameter path
+      // for fast/known-value entry; only the no-arg form pops the overlay.
+      if (args.trim().length === 0) {
+        await showEffortPicker(ctx);
+        return;
+      }
+
       let command;
       try {
         command = parseEffortCommand(args);

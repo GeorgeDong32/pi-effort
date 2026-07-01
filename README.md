@@ -31,6 +31,25 @@ Examples:
 /effort max
 ```
 
+### Interactive picker
+
+Bare `/effort` (no argument) opens a horizontal slider with the model's
+supported levels, current selection highlighted. Use ←/→ to move, Enter
+to confirm, Esc to cancel. The strongest available level sits flush against
+the right edge — no trailing whitespace.
+
+```text
+                              Effort
+
+              ──────────────────▲─────────────────────────────────
+              minimal      low      medium      high        xhigh
+
+              ←/→ to adjust · Enter to confirm · Esc to cancel
+```
+
+Tab also advances one step to the right. The picker falls back to a plain
+`select` dialog in non-TUI modes (RPC, print).
+
 ## Fast mode
 
 Fast mode is the latency/service-tier knob. When enabled, `pi-effort` adds
@@ -134,6 +153,7 @@ npm pack --dry-run
 ```text
 index.ts        Pi extension entrypoint
 effort.ts       Parsing, settings, and model capability logic
+effort-picker.ts  Custom TUI component for the /effort overlay
 package.json    Package metadata and Pi manifest
 tsconfig.json   TypeScript configuration
 ```

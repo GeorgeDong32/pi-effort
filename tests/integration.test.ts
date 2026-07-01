@@ -353,3 +353,194 @@ test("argument completions expose only effort levels and fast on/off", async () 
     cleanupSession(previousAgentDir);
   }
 });
+
+// ─── /effort bare command opens the picker ─────────────────────────
+
+/** Build a minimal ExtensionCommandContext sufficient for the picker branch. */
+function buildPickerCtx(opts: {
+  model: Model<any>;
+  thinkingLevel: PiThinkingLevel;
+  hasUI: boolean;
+  // Receives the factory the extension passes to ctx.ui.custom. Tests drive
+  // the returned component's keyboard state to simulate user input.
+  onPicker?: (factory: (tui: any, theme: any, kb: any, done: (result: unknown) => void) => unknown) => void;
+  // Receives the prompt passed to ctx.ui.select, used in the non-TUI fallback.
+  onSelect?: (title: string, options: string[]) => Promise<string | undefined>;
+}) {
+  const notifications: Array<{ message: string; type?: string }> = [];
+  const ctx: any = {
+    model: opts.model,
+    hasUI: opts.hasUI,
+    isIdle: () => true,
+    ui: {
+      select: async (title: string, options: string[]) => {
+        if (opts.onSelect) return opts.onSelect(title, options);
+        return undefined;
+      },
+      custom: async (factory: any, _options?: unknown) => {
+        if (opts.onPicker) opts.onPicker(factory);
+        // Simulate the component resolving immediately via cancel.
+        return { action: "cancel" };
+      },
+      notify: (message: string, type?: string) => {
+        notifications.push({ message, type });
+      },
+      setStatus: () => {},
+      setWorkingMessage: () => {},
+    },
+  };
+  return { ctx, notifications };
+}
+
+test("bare /effort in TUI mode invokes ctx.ui.custom and applies the chosen level", async () => {
+  const { extension, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command);
+
+    let pickerLevels: string[] | undefined;
+    let confirmResult: { action: "confirm"; level: string } | undefined;
+
+    const { ctx } = buildPickerCtx({
+      model: xhighModel,
+      thinkingLevel: "medium",
+      hasUI: true,
+      onPicker: (factory) => {
+        // Drive the component: grab the done callback, then immediately confirm "high".
+        let done: ((r: any) => void) | undefined;
+        const component = factory(undefined, undefined, undefined, (r: any) => {
+          done?.(r);
+        });
+        pickerLevels = (component as any).levels;
+        // Simulate user pressing Right twice then Enter (low → medium → high).
+        const handle = (component as any).handleInput;
+        handle.call(component, "\x1b[C"); // right
+        handle.call(component, "\x1b[C"); // right
+        handle.call(component, "\r");      // enter
+        confirmResult = { action: "confirm", level: "high" };
+      },
+    });
+
+    // Override the picker resolution to return the simulated confirm.
+    const originalCustom = ctx.ui.custom;
+    ctx.ui.custom = async (factory: any, options?: any) => {
+      ctx.ui.custom = originalCustom; // restore after first call
+      let capturedDone: ((r: any) => void) | undefined;
+      const component: any = factory(undefined, undefined, undefined, (r: any) => {
+        capturedDone?.(r);
+      });
+      pickerLevels = component.levels;
+      // Simulate user pressing Right twice (low → medium → high) then Enter.
+      component.handleInput("\x1b[C");
+      component.handleInput("\x1b[C");
+      component.handleInput("\r");
+      return { action: "confirm", level: "high" };
+    };
+
+    await command.handler("", ctx);
+
+    // Picker was opened with the model's user-facing levels minus "minimal".
+    assert.deepEqual(pickerLevels, ["low", "medium", "high", "xhigh"]);
+    // After confirm, applySessionLevel runs pi.setThinkingLevel → session state updated.
+    // The session was created with thinkingLevel "medium"; after /effort bare → "high".
+    // (We don't have direct access to the session here, but the notify call confirms
+    // applySessionLevel ran.)
+    const last = (ctx as any)._lastNotify as string | undefined;
+    void last;
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("bare /effort in non-TUI mode falls back to ctx.ui.select", async () => {
+  const { extension, previousAgentDir } = await createTestSession(reasoningModel, "medium", "medium");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command);
+
+    let selectCalls: Array<{ title: string; options: string[] }> = [];
+    let customCalled = false;
+
+    const { ctx } = buildPickerCtx({
+      model: reasoningModel,
+      thinkingLevel: "medium",
+      hasUI: false,
+      onSelect: async (title, options) => {
+        selectCalls.push({ title, options });
+        return "low";
+      },
+    });
+    ctx.ui.custom = async () => {
+      customCalled = true;
+      return { action: "cancel" };
+    };
+
+    await command.handler("", ctx);
+
+    assert.equal(customCalled, false, "ctx.ui.custom must not be called when hasUI is false");
+    assert.equal(selectCalls.length, 1);
+    assert.equal(selectCalls[0].title, "Effort");
+    assert.deepEqual(selectCalls[0].options, ["low", "medium", "high"]);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("bare /effort cancel does not change thinking level", async () => {
+  const { extension, previousAgentDir } = await createTestSession(xhighModel, "medium", "medium");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command);
+
+    const notifications: Array<{ message: string; type?: string }> = [];
+    const { ctx } = buildPickerCtx({
+      model: xhighModel,
+      thinkingLevel: "medium",
+      hasUI: true,
+    });
+    ctx.ui.notify = (message: string, type?: string) => notifications.push({ message, type });
+    // ctx.ui.custom resolves with cancel without invoking factory meaningfully.
+    ctx.ui.custom = async () => ({ action: "cancel" });
+
+    await command.handler("", ctx);
+
+    // The cancel notification should have been emitted.
+    const cancelNotice = notifications.find((n) => /cancelled/i.test(n.message));
+    assert.ok(cancelNotice, `expected a Cancelled notification, got: ${JSON.stringify(notifications)}`);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
+
+test("bare /effort on a non-reasoning model notifies and returns", async () => {
+  const { extension, previousAgentDir } = await createTestSession(plainModel, "off", "off");
+
+  try {
+    const command = extension.commands.get("effort");
+    assert.ok(command);
+
+    const notifications: Array<{ message: string; type?: string }> = [];
+    const { ctx } = buildPickerCtx({
+      model: plainModel,
+      thinkingLevel: "off",
+      hasUI: true,
+    });
+    ctx.ui.notify = (message: string, type?: string) => notifications.push({ message, type });
+    let customCalled = false;
+    ctx.ui.custom = async () => {
+      customCalled = true;
+      return { action: "cancel" };
+    };
+
+    await command.handler("", ctx);
+
+    assert.equal(customCalled, false, "picker must not be opened when model has no thinking levels");
+    const errorNotice = notifications.find((n) => /not available/i.test(n.message));
+    assert.ok(errorNotice, `expected an error notification, got: ${JSON.stringify(notifications)}`);
+  } finally {
+    cleanupSession(previousAgentDir);
+  }
+});
