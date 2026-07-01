@@ -96,14 +96,14 @@ The flag uses the same values as `/effort`.
 ## Install
 
 ```bash
-pi install npm:pi-effort
+pi install npm:@georgedong32/pi-effort
 ```
 
 Verify what Pi is loading:
 
 ```bash
 pi list
-npm list -g --depth=0 pi-effort
+npm list -g --depth=0 @georgedong32/pi-effort
 ```
 
 The durable Pi setting is the package entry in `~/.pi/agent/settings.json`:
@@ -111,7 +111,7 @@ The durable Pi setting is the package entry in `~/.pi/agent/settings.json`:
 ```json
 {
   "packages": [
-    "npm:pi-effort"
+    "npm:@georgedong32/pi-effort"
   ]
 }
 ```
@@ -128,7 +128,7 @@ pi -e ./index.ts
 For a longer local-path development install:
 
 ```bash
-pi remove npm:pi-effort
+pi remove npm:@georgedong32/pi-effort
 pi install "$(pwd)"
 ```
 
@@ -137,7 +137,7 @@ After publishing a new version, switch back to the npm package:
 ```bash
 npm publish
 pi remove "$(pwd)"
-pi install npm:pi-effort
+pi install npm:@georgedong32/pi-effort
 ```
 
 ## Verification

@@ -1,5 +1,5 @@
 {
-  "name": "pi-effort",
+  "name": "@georgedong32/pi-effort",
   "version": "0.1.0",
   "packageManager": "bun@1.3.13",
   "description": "Pi extension for controlling thinking effort with model-adaptive min/max aliases",
@@ -13,6 +13,9 @@
   "homepage": "https://github.com/GeorgeDong32/pi-effort#readme",
   "bugs": {
     "url": "https://github.com/GeorgeDong32/pi-effort/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "pi-package",
@@ -42,6 +45,7 @@
   },
   "files": [
     "CHANGELOG.md",
+    "effort-picker.ts",
     "effort.ts",
     "index.ts",
     "README.md",
