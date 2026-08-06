@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-07
+
+### Fixed
+- `min`/`max` effort aliases now resolve against the model's actual supported levels, fixing models with sparse reasoning maps (e.g. `thinkingLevelMap` that nulls out `minimal`/`low`/`medium`, leaving only `high` + `xhigh`). Previously `/effort min` returned an unavailable tier and errored.
+
+### Changed
+- Simplified the effort picker caret centering logic (no behavior change).
+
 ## [0.1.0] - 2026-07-01
 
 ### Added
