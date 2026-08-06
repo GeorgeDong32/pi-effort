@@ -220,14 +220,15 @@ function buildSliderLine(
   const caret = "▲";
   // Build a column array of single-cell characters, then place the caret on
   // the column that visually centers over the selected label.
-  // Label center sits at `positions[i]`, but for an even-width label there
-  // is no exact center column — the visual midline falls between two chars.
-  // We place the caret on the left half of the midline so ▲ reads as
-  // centered over the label rather than shifted right by half a column.
+  // positions[i] is the caret anchor column; see buildLabelsLine for how
+  // label text is laid out around it.
   const cols: string[] = new Array(rowWidth).fill(char);
   const labelCol = positions[selectedIndex];
   const labelWidth = labelWidths[selectedIndex] ?? 0;
-  const caretCol = labelWidth % 2 === 0 ? labelCol - 1 : labelCol;
+  // positions[i] is the caret column. For even-width labels the true visual
+  // center falls between two columns; anchoring the caret on the left cell of
+  // that pair reads more centered than biasing to the right.
+  const caretCol = labelCol;
   if (caretCol >= 0 && caretCol < rowWidth) {
     cols[caretCol] = caret;
   }
@@ -247,25 +248,18 @@ function buildLabelsLine(
   const innerWidth = positions[positions.length - 1] + END_INSET + 1;
   const cols: string[] = new Array(innerWidth).fill(" ");
 
-  // Helper: column where the caret (▲) for label i sits. For odd-width labels
-  // this equals the label's center column; for even-width labels it falls on
-  // the left side of the visual midline so ▲ reads as centered over the word.
-  const caretColOf = (i: number): number => {
-    const w = labelWidths[i];
-    const center = positions[i];
-    return w % 2 === 0 ? center - 1 : center;
-  };
+  // Helper: column where the caret (▲) for label i sits. positions[i] is the
+  // caret anchor; label text is laid out around it.
+  const caretColOf = (i: number): number => positions[i];
 
   // First pass: fill unselected labels into the column buffer. Each label is
-  // written so its visual center column matches its caret column.
+  // written so its caret column sits on the label's center (odd width) or the
+  // left cell of the center pair (even width).
   for (let i = 0; i < levels.length; i++) {
     if (i === selectedIndex) continue;
     const w = labelWidths[i];
     const caretCol = caretColOf(i);
-    // For odd w, caretCol = label center = start + floor(w/2).
-    // For even w, caretCol = center - 1 = start + (w/2 - 1) = start + w/2 - 1.
-    // Both cases reduce to: start = caretCol - floor(w/2).
-    const start = caretCol - Math.floor(w / 2);
+    const start = caretCol - Math.floor((w - 1) / 2);
     writeInto(cols, levels[i], start);
   }
 
@@ -274,7 +268,7 @@ function buildLabelsLine(
   const styled = inverse(bold(selectedLabel));
   const w = labelWidths[selectedIndex];
   const caretCol = caretColOf(selectedIndex);
-  const start = caretCol - Math.floor(w / 2);
+  const start = caretCol - Math.floor((w - 1) / 2);
   // Splice styled string into the column buffer; visible width of styled
   // text still equals w (inverse/bold don't add visible cells).
   cols.splice(start, w, styled);

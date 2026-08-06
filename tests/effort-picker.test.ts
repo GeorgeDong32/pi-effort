@@ -239,6 +239,27 @@ test("title line contains 'Effort'", () => {
   assert.ok(titleLine.includes("Effort"), `expected 'Effort' in title line, got: ${titleLine}`);
 });
 
+test("caret aligns with label center for odd- and even-width level names", () => {
+  const levels = ["low", "medium", "high", "xhigh"];
+  const stripAnsi = (line: string): string => line.replace(/\x1b\[[0-9;]*m/g, "");
+
+  for (const level of levels) {
+    const { component } = newPicker(levels, level);
+    const lines = component.render(80);
+    const slider = stripAnsi(lines[4]);
+    const labels = stripAnsi(lines[5]);
+    const caretCol = slider.indexOf("▲");
+    const labelStart = labels.indexOf(level);
+    assert.ok(labelStart >= 0, `expected to find ${level} in labels line`);
+    const labelEnd = labelStart + level.length - 1;
+    const labelCenter = (labelStart + labelEnd) / 2;
+    // Terminal grids are discrete: even-width labels have a center between
+    // columns, so the caret sits on the left cell of the center pair.
+    const expectedDelta = level.length % 2 === 0 ? -0.5 : 0;
+    assert.equal(caretCol - labelCenter, expectedDelta, `${level}: caret at ${caretCol}, center ${labelCenter}`);
+  }
+});
+
 test("footer line includes arrow and confirm hints", () => {
   const { component } = newPicker(LEVELS_5, "medium");
   const lines = component.render(80);
