@@ -30,6 +30,12 @@ void _driftCheck;
 const standardReasoningModel = { id: "minimax/minimax-m2.7", reasoning: true } as const;
 const xhighReasoningModel = { id: "gpt-5.4", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
 const opusXhighReasoningModel = { id: "claude-opus-4.6", reasoning: true, thinkingLevelMap: { xhigh: "xhigh" } } as const;
+// Sparse reasoning map: low tiers mapped to null → only high + xhigh are usable.
+const sparseReasoningModel = {
+  id: "gemini-sparse",
+  reasoning: true,
+  thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", xhigh: "max" },
+} as const;
 
 // ─── parseEffortCommand / parseFastCommand ──────────────────────────
 
@@ -102,6 +108,27 @@ test("resolveMaxLevel returns xhigh for xhigh-capable models", () => {
 test("resolveMaxLevel returns undefined for non-reasoning models", () => {
   assert.equal(resolveMaxLevel({ id: "plain-model", reasoning: false }), undefined);
   assert.equal(resolveMaxLevel(null), undefined);
+});
+
+// ─── Sparse reasoning map (low tiers mapped to null) ────────────────
+
+test("sparse reasoning map: available levels drop null-mapped tiers", () => {
+  assert.deepEqual(getAvailableThinkingLevels(sparseReasoningModel), ["off", "high", "xhigh"]);
+});
+
+test("sparse reasoning map: resolveMinLevel returns lowest available level", () => {
+  // "minimal" is mapped to null and therefore unavailable; min must fall
+  // back to the lowest usable tier instead of returning "minimal".
+  assert.equal(resolveMinLevel(sparseReasoningModel), "high");
+});
+
+test("sparse reasoning map: resolveMaxLevel returns highest available level", () => {
+  assert.equal(resolveMaxLevel(sparseReasoningModel), "xhigh");
+});
+
+test("sparse reasoning map: resolveEffortLevel resolves aliases to usable tiers", () => {
+  assert.equal(resolveEffortLevel("min", sparseReasoningModel), "high");
+  assert.equal(resolveEffortLevel("max", sparseReasoningModel), "xhigh");
 });
 
 test("resolveEffortLevel resolves semantic aliases per model", () => {

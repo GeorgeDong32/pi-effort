@@ -148,7 +148,11 @@ export function getUserFacingLevels(model: EffortModel | null | undefined): Effo
  */
 export function resolveMinLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
   if (!model?.reasoning) return undefined;
-  return "minimal";
+  // Pick the lowest available level for the model. Sparse reasoning maps
+  // (e.g. minimal/low/medium mapped to null) mean "minimal" may be
+  // unavailable, so resolve against the actual supported set rather than
+  // assuming "minimal" always exists.
+  return getUserFacingLevels(model)[0];
 }
 
 /**
@@ -157,7 +161,10 @@ export function resolveMinLevel(model: EffortModel | null | undefined): EffortLe
  */
 export function resolveMaxLevel(model: EffortModel | null | undefined): EffortLevel | undefined {
   if (!model?.reasoning) return undefined;
-  return getAvailableThinkingLevels(model).includes("xhigh") ? "xhigh" : "high";
+  // Pick the highest available level. Using the last supported entry makes
+  // this robust to sparse reasoning maps regardless of which top tier exists.
+  const levels = getUserFacingLevels(model);
+  return levels[levels.length - 1];
 }
 
 /** Resolve a user-facing level or semantic alias against the active model. */
